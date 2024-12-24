@@ -303,6 +303,7 @@ struct nvme_reservation_status {
 };
 
 /* I/O commands */
+/* CSD */
 
 #define NVME_OPCODES(op)			\
 	op(nvme_cmd_flush, 0x00)		\
@@ -328,6 +329,7 @@ struct nvme_reservation_status {
 	op(nvme_cmd_kv_iter_read, 0xB2) \
 	op(nvme_cmd_kv_exist, 0xB3) \
 	op(nvme_cmd_kv_batch, 0x85) \
+	op(nvme_cmd_csd_process_edge, 0x66) \
 
 #define ENUM_NVME_OP(name, value) name = value,
 #define STRING_NVME_OP(name, value) [name] = #name,

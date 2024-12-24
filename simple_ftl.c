@@ -12,7 +12,10 @@ static inline unsigned long long __get_wallclock(void)
 
 static size_t __cmd_io_size(struct nvme_rw_command *cmd)
 {
-	NVMEV_DEBUG_VERBOSE("[%c] %llu + %d, prp %llx %llx\n",
+	// NVMEV_DEBUG_VERBOSE("[%c] %llu + %d, prp %llx %llx\n",
+	// 		cmd->opcode == nvme_cmd_write ? 'W' : 'R', cmd->slba, cmd->length,
+	// 	    cmd->prp1, cmd->prp2);
+	NVMEV_INFO("[%c] %llu + %d, prp %llx %llx\n",
 			cmd->opcode == nvme_cmd_write ? 'W' : 'R', cmd->slba, cmd->length,
 		    cmd->prp1, cmd->prp2);
 
@@ -81,12 +84,16 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 	BUG_ON(ns->csi != NVME_CSI_NVM);
 	BUG_ON(BASE_SSD != INTEL_OPTANE);
 
+	NVMEV_INFO("%s: Opcode: %x", __func__, cmd->common.opcode);
+
 	switch (cmd->common.opcode) {
 	case nvme_cmd_write:
 	case nvme_cmd_read:
 		ret->nsecs_target = __schedule_io_units(
 			cmd->common.opcode, cmd->rw.slba,
 			__cmd_io_size((struct nvme_rw_command *)cmd), __get_wallclock());
+		// if(cmd->common.opcode == nvme_cmd_write)
+		// 	NVMEV_INFO("%s: Response time: %d", __func__, ret->nsecs_target);
 		break;
 	case nvme_cmd_flush:
 		ret->nsecs_target = __schedule_flush(req);

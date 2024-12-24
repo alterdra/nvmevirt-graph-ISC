@@ -94,7 +94,10 @@ static unsigned int __do_perform_io(int sqid, int sq_entry)
 		if (cmd->opcode == nvme_cmd_write ||
 		    cmd->opcode == nvme_cmd_zone_append) {
 			memcpy(nvmev_vdev->ns[nsid].mapped + offset, vaddr + mem_offs, io_size);
+			NVMEV_INFO("[__do_perform_io()] [nvme_cmd_write] Prp1 address: %llx, Virt address: %llx\n", paddr, vaddr);
 		} else if (cmd->opcode == nvme_cmd_read) {
+			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
+		} else if(cmd->opcode == nvme_cmd_csd_process_edge) {
 			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 		}
 
