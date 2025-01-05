@@ -2,8 +2,22 @@
 
 #include <linux/ktime.h>
 #include <linux/sched/clock.h>
+#include <linux/highmem.h>
 
 #include "simple_ftl.h"
+
+struct ADDR_PROC_EDGE 
+{
+    __u64 src_vertex_slba;
+    __u64 outdegree_slba;
+    __u64 edge_slba; 
+    __u64 dst_vertex_addr;
+    __u32 vertex_data_len;
+    __u32 outdegree_data_len;
+    __u32 edge_data_len; 
+
+    __u32 version;
+}__attribute__((packed));
 
 static inline unsigned long long __get_wallclock(void)
 {
@@ -25,7 +39,7 @@ static size_t __cmd_io_size(struct nvme_rw_command *cmd)
 /* Return the time to complete */
 static unsigned long long __schedule_io_units(int opcode, unsigned long lba, unsigned int length,
 					      unsigned long long nsecs_start)
-{
+{    
 	unsigned int io_unit_size = 1 << nvmev_vdev->config.io_unit_shift;
 	unsigned int io_unit =
 		(lba >> (nvmev_vdev->config.io_unit_shift - LBA_BITS)) % nvmev_vdev->config.nr_io_units;
@@ -97,6 +111,27 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 		break;
 	case nvme_cmd_flush:
 		ret->nsecs_target = __schedule_flush(req);
+		break;
+	case nvme_cmd_csd_process_edge:
+		{
+			NVMEV_INFO("-----%s: [nvme_cmd_csd_proc_edge]-----\n", __func__);
+
+			u64 paddr_cmd_struct = cmd->rw.prp1;
+			// void* vaddr = kmap_atomic_pfn(PRP_PFN(paddr_cmd_struct));
+			void *vaddr = phys_to_virt(cmd->rw.prp1);
+			NVMEV_INFO("prp1: %llx\n", paddr_cmd_struct);
+			NVMEV_INFO("vaddr: %llx\n", vaddr);
+			if (vaddr == NULL || !virt_addr_valid(vaddr)) {
+				NVMEV_ERROR("Invalid vaddr: %llx\n", vaddr);
+				return -EFAULT;
+			}
+			
+			struct ADDR_PROC_EDGE addr_proc_edge;
+			memcpy(&addr_proc_edge, vaddr, sizeof(struct ADDR_PROC_EDGE));
+			NVMEV_INFO("src_vertex_slba: %llu\n", addr_proc_edge.src_vertex_slba);
+			NVMEV_INFO("outdegree_slba: %llu\n", addr_proc_edge.outdegree_slba);
+			NVMEV_INFO("edge_slba: %llu\n", addr_proc_edge.edge_slba);
+		}
 		break;
 	default:
 		NVMEV_ERROR("%s: command not implemented: %s (0x%x)\n", __func__,
