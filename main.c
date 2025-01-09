@@ -23,6 +23,9 @@
 #include "kv_ftl.h"
 #include "dma.h"
 
+// Graph Processing
+#include "core/queue.h"
+
 /****************************************************************
  * Memory Layout
  ****************************************************************
@@ -190,6 +193,10 @@ static int nvmev_dispatcher(void *data)
 
 static void NVMEV_DISPATCHER_INIT(struct nvmev_dev *nvmev_vdev)
 {
+	// Graph  processing
+	queue_init(&(nvmev_vdev->normal_task_queue));
+	queue_init(&(nvmev_vdev->future_task_queue));
+
 	nvmev_vdev->nvmev_dispatcher = kthread_create(nvmev_dispatcher, NULL, "nvmev_dispatcher");
 	if (nvmev_vdev->config.cpu_nr_dispatcher != -1)
 		kthread_bind(nvmev_vdev->nvmev_dispatcher, nvmev_vdev->config.cpu_nr_dispatcher);
@@ -198,6 +205,10 @@ static void NVMEV_DISPATCHER_INIT(struct nvmev_dev *nvmev_vdev)
 
 static void NVMEV_DISPATCHER_FINAL(struct nvmev_dev *nvmev_vdev)
 {
+	// Graph processing
+	queue_destroy(&(nvmev_vdev->normal_task_queue));
+	queue_destroy(&(nvmev_vdev->future_task_queue));
+
 	if (!IS_ERR_OR_NULL(nvmev_vdev->nvmev_dispatcher)) {
 		kthread_stop(nvmev_vdev->nvmev_dispatcher);
 		nvmev_vdev->nvmev_dispatcher = NULL;

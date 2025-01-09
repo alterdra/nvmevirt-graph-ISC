@@ -4,20 +4,11 @@
 #include <linux/sched/clock.h>
 #include <linux/highmem.h>
 
+#include <linux/sched.h>     // For task_struct and current
+#include <linux/sched/signal.h> // For accessing process structures
+
 #include "simple_ftl.h"
-
-struct ADDR_PROC_EDGE 
-{
-    __u64 src_vertex_slba;
-    __u64 outdegree_slba;
-    __u64 edge_slba; 
-    __u64 dst_vertex_addr;
-    __u32 vertex_data_len;
-    __u32 outdegree_data_len;
-    __u32 edge_data_len; 
-
-    __u32 version;
-}__attribute__((packed));
+#include "core/queue.h"
 
 static inline unsigned long long __get_wallclock(void)
 {
@@ -26,12 +17,12 @@ static inline unsigned long long __get_wallclock(void)
 
 static size_t __cmd_io_size(struct nvme_rw_command *cmd)
 {
-	// NVMEV_DEBUG_VERBOSE("[%c] %llu + %d, prp %llx %llx\n",
-	// 		cmd->opcode == nvme_cmd_write ? 'W' : 'R', cmd->slba, cmd->length,
-	// 	    cmd->prp1, cmd->prp2);
-	NVMEV_INFO("[%c] %llu + %d, prp %llx %llx\n",
+	NVMEV_DEBUG_VERBOSE("[%c] %llu + %d, prp %llx %llx\n",
 			cmd->opcode == nvme_cmd_write ? 'W' : 'R', cmd->slba, cmd->length,
 		    cmd->prp1, cmd->prp2);
+	// NVMEV_INFO("[%c] %llu + %d, prp %llx %llx\n",
+	// 		cmd->opcode == nvme_cmd_write ? 'W' : 'R', cmd->slba, cmd->length,
+	// 	    cmd->prp1, cmd->prp2);
 
 	return (cmd->length + 1) << LBA_BITS;
 }
@@ -98,7 +89,7 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 	BUG_ON(ns->csi != NVME_CSI_NVM);
 	BUG_ON(BASE_SSD != INTEL_OPTANE);
 
-	NVMEV_INFO("%s: Opcode: %x", __func__, cmd->common.opcode);
+	// NVMEV_INFO("%s: Opcode: %x", __func__, cmd->common.opcode);
 
 	switch (cmd->common.opcode) {
 	case nvme_cmd_write:
@@ -114,23 +105,34 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 		break;
 	case nvme_cmd_csd_process_edge:
 		{
+			// Dispatcher
 			NVMEV_INFO("-----%s: [nvme_cmd_csd_proc_edge]-----\n", __func__);
 
-			u64 paddr_cmd_struct = cmd->rw.prp1;
-			// void* vaddr = kmap_atomic_pfn(PRP_PFN(paddr_cmd_struct));
 			void *vaddr = phys_to_virt(cmd->rw.prp1);
-			NVMEV_INFO("prp1: %llx\n", paddr_cmd_struct);
+			NVMEV_INFO("prp1: %llx\n", cmd->rw.prp1);
 			NVMEV_INFO("vaddr: %llx\n", vaddr);
 			if (vaddr == NULL || !virt_addr_valid(vaddr)) {
 				NVMEV_ERROR("Invalid vaddr: %llx\n", vaddr);
 				return -EFAULT;
 			}
 			
-			struct ADDR_PROC_EDGE addr_proc_edge;
-			memcpy(&addr_proc_edge, vaddr, sizeof(struct ADDR_PROC_EDGE));
-			NVMEV_INFO("src_vertex_slba: %llu\n", addr_proc_edge.src_vertex_slba);
-			NVMEV_INFO("outdegree_slba: %llu\n", addr_proc_edge.outdegree_slba);
-			NVMEV_INFO("edge_slba: %llu\n", addr_proc_edge.edge_slba);
+
+			struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+			struct PROC_EDGE proc_edge_struct;
+
+			memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
+			queue_enqueue(normal_task_queue, proc_edge_struct);
+
+			NVMEV_INFO("Normal Task Queue Size: %llu\n", get_queue_size(normal_task_queue));
+			NVMEV_INFO("Pid: %llu\n", current->pid);
+
+			memset(&proc_edge_struct, 0, sizeof(struct PROC_EDGE));
+			get_queue_front(normal_task_queue, &proc_edge_struct);
+			NVMEV_INFO("Queue Front src_vertex_slba (BAfter): %llu\n", proc_edge_struct.src_vertex_slba);
+			
+			memset(&proc_edge_struct, 0, sizeof(struct PROC_EDGE));
+			get_queue_back(normal_task_queue, &proc_edge_struct);
+			NVMEV_INFO("Queue back src_vertex_slba: %llu\n", proc_edge_struct.src_vertex_slba);
 		}
 		break;
 	default:

@@ -8,6 +8,7 @@
 
 #include "nvmev.h"
 #include "dma.h"
+#include "core/queue.h"
 
 #if (SUPPORTED_SSD_TYPE(CONV) || SUPPORTED_SSD_TYPE(ZNS))
 #include "ssd.h"
@@ -97,10 +98,7 @@ static unsigned int __do_perform_io(int sqid, int sq_entry)
 			NVMEV_INFO("[__do_perform_io()] [nvme_cmd_write] Prp1 address: %llx, Virt address: %llx\n", paddr, vaddr);
 		} else if (cmd->opcode == nvme_cmd_read) {
 			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
-		} else if(cmd->opcode == nvme_cmd_csd_process_edge) {
-			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 		}
-
 		kunmap_atomic(vaddr);
 
 		remaining -= io_size;
@@ -436,6 +434,7 @@ static size_t __nvmev_proc_io(int sqid, int sq_entry, size_t *io_size)
 	static unsigned long long counter = 0;
 #endif
 
+	// Graph processing task queue
 	if (!ns->proc_io_cmd(ns, &req, &ret))
 		return false;
 	*io_size = __cmd_io_size(&sq_entry(sq_entry).rw);

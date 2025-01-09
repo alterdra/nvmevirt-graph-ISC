@@ -180,14 +180,16 @@ int main() {
     printf("io->addr->src_vertex_slba: %llu\n", ((struct ADDR_PROC_EDGE*)(io.addr))->src_vertex_slba);
     
 
-    ret = nvme_io_submit(fd, &io);
-    if (ret < 0) {
-        cleanup(fd, buffer);
-        return -1;
+    for(int i = 0; i < 20; i++){
+        ((struct ADDR_PROC_EDGE*)(io.addr))->src_vertex_slba = i;
+        ret = nvme_io_submit(fd, &io);
+        if (ret < 0) {
+            cleanup(fd, buffer);
+            return -1;
+        }
     }
-    
     // Cleanup
     cleanup(fd, buffer);
-    sleep(2);
+    // sleep(2);
     return 0;
 }
