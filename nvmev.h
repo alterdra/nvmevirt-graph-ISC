@@ -253,6 +253,11 @@ struct nvmev_dev {
 	// Graph Processing
 	struct queue normal_task_queue;
 	struct queue future_task_queue;
+	u64 normal_hmb_addr;
+	u64 future_hmb_addr;
+	// int num_partitions;
+	// int num_vertices;
+	const int edge_size = 8;	// Unweighted
 
 	unsigned int mdts;
 
