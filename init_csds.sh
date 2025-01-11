@@ -16,7 +16,7 @@ then
         sudo rmmod nvmev0
     fi
 
-	sudo insmod nvmev0.ko memmap_start=0G memmap_size=1G cpus=1,2
+	sudo insmod nvmev0.ko memmap_start=1G memmap_size=1G cpus=1,2
 
 elif [ $TARGET -eq 1 ]
 then
@@ -24,5 +24,5 @@ then
         sudo rmmod nvmev1
     fi
 
-	sudo insmod nvmev1.ko memmap_start=1G memmap_size=1G cpus=3,4
+	sudo insmod nvmev1.ko memmap_start=2G memmap_size=1G cpus=3,4
 fi
