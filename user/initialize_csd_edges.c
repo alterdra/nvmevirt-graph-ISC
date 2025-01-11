@@ -12,13 +12,19 @@
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
 
-// Function prototypes
-int open_nvme_device(const char *device_path);
-void *allocate_dma_buffer(size_t size);
-int setup_nvme_command(struct nvme_user_io *io, void *buffer, __u8 opcode, __u64 slba);
-int nvme_io_submit(int fd, struct nvme_user_io *io);
-int verify_data(void *buffer, size_t size, unsigned char expected);
-void cleanup(int fd, void *buffer);
+// Graph Dataset: Ex, LiveJournal
+const int num_partition = 8;
+const int num_vertices = 4847571;
+const int vertex_size = 4;
+const int edge_size = 8;    //Unweighted
+const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
+
+// Edge Processing;
+int src_vertices_slba;
+int dst_vertices_slba;
+int outdegree_slba;
+int** edge_blocks_slba;     // edge_blocks_slba[num_partition][num_partition]
+int** edge_blocks_length;   // edge_blocks_length[num_partition][num_partition]
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -76,46 +82,35 @@ void cleanup(int fd, void *buffer) {
     if (fd >= 0) {
         close(fd);
     }
+    // Free the edge blocks metadata
+    for (int i = 0; i < num_partition; i++) {
+        free(edge_blocks_slba[i]);
+    }
+    free(edge_blocks_slba);
+    for (int i = 0; i < num_partition; i++) {
+        free(edge_blocks_length[i]);
+    }
+    free(edge_blocks_length);
 }
 
 long getFileSize(const char *filename) {
     struct stat fileStat;
-    if (stat(filename, &fileStat) != 0) {
+    if (stat(filename, &fileStat) != 0) {/etc/default/grub
         perror("Error getting file stats");
         return -1;
     }
     return fileStat.st_size;
 }
 
-int main() 
-{
+int init_csd_data(int fd, void *buffer){
+    
+    int ret;
     char filename[50];
-    int fd, ret;
-    void *buffer;
     struct nvme_user_io io;
-    size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 
-    // Open NVMeVirt device
-    fd = open_nvme_device(NVME_DEVICE);
-    if (fd < 0) {
-        return -1;
-    }
-    // Allocate buffer
-    buffer = allocate_dma_buffer(buffer_size);
-    if (!buffer) {
-        cleanup(fd, NULL);
-        return -1;
-    }
-
-    // Graph Dataset: Ex, LiveJournal
-    const int num_partition = 8;
-    const int num_vertices = 4847571;
-    const int vertex_size = 4;
-    const int edge_size = 8;    //Unweighted
-
-    int src_vertices_slba = 0;
-    int dst_vertices_slba = src_vertices_slba + num_vertices * vertex_size;
-    int outdegree_slba = dst_vertices_slba + num_vertices * vertex_size;
+    src_vertices_slba = 0;
+    dst_vertices_slba = src_vertices_slba + num_vertices * vertex_size;
+    outdegree_slba = dst_vertices_slba + num_vertices * vertex_size;
 
     // Read outdegree and write 4KB buffer outdegree into nvme virtual device
     sprintf(filename, "../LiveJournal.pl/outdegrees");
@@ -136,11 +131,18 @@ int main()
     }
     printf("outdegree size: %d(KB)\n", total_size / 1024);
 
-    int edge_blocks_slba[num_partition][num_partition];
-    int edge_blocks_length[num_partition][num_partition];
+    // Initialize 2d array for edge blocks
+    edge_blocks_slba = malloc(num_partition * sizeof(int*));
+    for (int i = 0; i < num_partition; i++) {
+        edge_blocks_slba[i] = malloc(num_partition * sizeof(int));
+    }
+    edge_blocks_length = malloc(num_partition * sizeof(int*));
+    for (int i = 0; i < num_partition; i++) {
+        edge_blocks_length[i] = malloc(num_partition * sizeof(int));
+    }
+    
+    // Read edge blocks and write 4KB buffer outdegree into nvme virtual device
     int edge_block_base_slba = outdegree_slba + total_size;
-
-    // Todo: read edge blocks and write 4KB buffer outdegree into nvme virtual device
     for(int i = 0; i < num_partition; i++){
         for(int j = 0; j < num_partition; j++)
         {
@@ -168,24 +170,68 @@ int main()
             printf("Size of edge block %s: %dB, %dB, SLBA: %llu\n", filename, total_size, edge_blocks_length[i][j], edge_blocks_slba[i][j]);
         }
     }
+    return 0;
+}
 
-    // test the edge block
+int test_edge_block(int fd, void *buffer, int r, int c)
+{
+    int ret;
+    struct nvme_user_io io;
     memset(buffer, 0, sizeof(buffer));
-    ret = setup_nvme_command(&io, buffer, 0x02, edge_blocks_slba[5][5] / SECTOR_SIZE);  // Setup read command
-    if (ret < 0) {
-        cleanup(fd, buffer);
-        return -1;
-    }
-    ret = nvme_io_submit(fd, &io);
-    if (ret < 0) {
-        cleanup(fd, buffer);
-        return -1;
-    }
-    for(int i = 0; i < buffer_size; i += edge_size){
-        int u = *(int*)(buffer + i);
-        int v = *(int*)(buffer + i + vertex_size);
-        printf("%d %d\n", u, v);
+    int offset = 0;
+
+    printf("Total cnt of bytes of edge block %d-%d: %d\n", r, c, edge_blocks_length[r][c]);
+    while(offset < edge_blocks_length[r][c]){
+        ret = setup_nvme_command(&io, buffer, 0x02, (edge_blocks_slba[r][c] + offset) / SECTOR_SIZE);  // Setup read command
+        if (ret < 0) {
+            cleanup(fd, buffer);
+            return -1;
+        }
+        ret = nvme_io_submit(fd, &io);
+        if (ret < 0) {
+            cleanup(fd, buffer);
+            return -1;
+        }
+        int min_val = (edge_blocks_length[r][c] - offset) < buffer_size ? (edge_blocks_length[r][c] - offset) : buffer_size;
+        printf("-----page----------: %d bytes valid\n", min_val);
+        for(int i = 0; i < min_val; i += edge_size){
+            int u = *(int*)(buffer + i);
+            int v = *(int*)(buffer + i + vertex_size);
+            // printf("%d %d\n", u, v);
+        }
+        offset += buffer_size;
     }
     cleanup(fd, buffer);
+}
+
+int csd_proc_edge_loop(int fd, void *buffer){
+    for(int r = 0; r < num_partition; r++){
+        for(int c = 0; c < num_partition; c++){
+
+        }
+    }
+}
+
+int main() 
+{
+    int fd, ret;
+    void *buffer;
+    struct nvme_user_io io;
+    
+    // Open NVMeVirt device
+    fd = open_nvme_device(NVME_DEVICE_0);
+    if (fd < 0) {
+        return -1;
+    }
+    // Allocate buffer
+    buffer = allocate_dma_buffer(buffer_size);
+    if (!buffer) {
+        cleanup(fd, NULL);
+        return -1;
+    }
+
+    init_csd_data(fd, buffer);
+    test_edge_block(fd, buffer, 5, 1);
+    
     return 0;
 }

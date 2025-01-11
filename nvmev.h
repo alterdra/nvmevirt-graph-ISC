@@ -251,13 +251,15 @@ struct nvmev_dev {
 	struct nvmev_completion_queue *cqes[NR_MAX_IO_QUEUE + 1];
 
 	// Graph Processing
+	// Task Queues (edge blocks)
 	struct queue normal_task_queue;
 	struct queue future_task_queue;
+	// HMB (For Aggregation)
 	u64 normal_hmb_addr;
 	u64 future_hmb_addr;
+	// Todo: CSD DRAM
 	// int num_partitions;
 	// int num_vertices;
-	const int edge_size = 8;	// Unweighted
 
 	unsigned int mdts;
 
@@ -269,6 +271,10 @@ struct nvmev_dev {
 	struct proc_dir_entry *proc_debug;
 
 	unsigned long long *io_unit_stat;
+
+	// Multiple CSDs
+	char virt_name[10];
+	char dma_name[20];
 };
 
 struct nvmev_request {
