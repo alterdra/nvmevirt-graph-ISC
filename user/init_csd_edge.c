@@ -8,6 +8,8 @@
 #include <linux/nvme_ioctl.h>
 #include <sys/stat.h>
 
+#include "../core/proc_edge_struct.h"
+
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
 #define MAX_NUM_CSDS 4
@@ -32,8 +34,13 @@ int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Opens the NVMe device and returns file descriptor
-int open_nvme_device(const char *device_path) {
-    int fd = open(device_path, O_RDWR);
+int open_nvme_device(const char *device_path, int blocking) {
+
+    int fd;
+    if(blocking)
+        fd = open(device_path, O_RDWR);
+    else 
+        fd = open(device_path, O_RDWR | O_NONBLOCK);
     if (fd < 0) {
         perror("Failed to open NVMe device");
         return -1;
@@ -249,22 +256,52 @@ int test_edge_block(int* fd, void *buffer, int r, int c, int csd_id)
     }
 }
 
-// int csd_proc_edge_loop(int fd, void *buffer){
-//     for(int r = 0; r < num_partitions; r++){
-//         for(int c = 0; c < num_partitions; c++){
+int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *proc_edge_struct) {
+    memset(io, 0, sizeof(*io));
+    io->opcode = 0x66;  // 0x66 for csd_proc_edge
+    io->addr = (unsigned long long)proc_edge_struct;
+    return 0;
+}
 
-//         }
-//     }
-// }
+int csd_proc_edge_loop(int* fd, void *buffer)
+{
+    struct nvme_user_io io;
+    int ret;
+
+    for(int iter = 0; iter < 1; iter++){
+        for(int r = 0; r < num_partitions; r++){
+            for(int c = 0; c < num_partitions; c++){
+                for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                    struct PROC_EDGE proc_edge_struct = 
+                    {
+                        .src_vertex_slba = src_vertices_slba,
+                        .outdegree_slba = outdegree_slba,
+                        .edge_block_slba = edge_blocks_slba[r][c][csd_id],
+                        .vertex_len = vertex_size * num_vertices,
+                        .outdegree_len = vertex_size * num_vertices,
+                        .edge_block_len = edge_blocks_length[r][c][csd_id],
+                        .version = iter,
+                    };
+                    setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
+                    ret = nvme_io_submit(fd[csd_id], &io);
+                    if (ret < 0) {
+                        cleanup(buffer);
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+}
 
 int main() 
 {
     void *buffer;
     struct nvme_user_io io;
     
-    // Open NVMeVirt devices
+    // Open NVMeVirt devices: Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id]);
+        fd[csd_id] = open_nvme_device(device[csd_id], 1);
         if (fd[csd_id] < 0) {
             return -1;
         }
@@ -278,9 +315,23 @@ int main()
     }
 
     init_csds_data(fd, buffer);
-    test_edge_block(fd, buffer, 5, 4, 0);
-    test_edge_block(fd, buffer, 5, 4, 1);
+    // test_edge_block(fd, buffer, 5, 4, 0);
+    // test_edge_block(fd, buffer, 5, 4, 1);
+    for(int i = 0; i < num_csds; i++){
+        if (fd[i] >= 0) {
+            close(fd[i]);
+        }
+    }
 
+    // Open NVMeVirt devices: Blocking
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        fd[csd_id] = open_nvme_device(device[csd_id], 0);
+        if (fd[csd_id] < 0) {
+            return -1;
+        }
+    }
+
+    csd_proc_edge_loop(fd, buffer);
     cleanup(buffer);
     
     return 0;

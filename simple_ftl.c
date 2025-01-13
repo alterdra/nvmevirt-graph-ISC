@@ -109,30 +109,22 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 			NVMEV_INFO("-----%s: [nvme_cmd_csd_proc_edge]-----\n", __func__);
 
 			void *vaddr = phys_to_virt(cmd->rw.prp1);
-			NVMEV_INFO("prp1: %llx\n", cmd->rw.prp1);
-			NVMEV_INFO("vaddr: %llx\n", vaddr);
+			// NVMEV_INFO("prp1: %llx\n, vaddr: %llx", cmd->rw.prp1, vaddr);
 			if (vaddr == NULL || !virt_addr_valid(vaddr)) {
 				NVMEV_ERROR("Invalid vaddr: %llx\n", vaddr);
 				return -EFAULT;
 			}
 			
-
 			struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 			struct PROC_EDGE proc_edge_struct;
 
 			memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
 			queue_enqueue(normal_task_queue, proc_edge_struct);
 
-			NVMEV_INFO("Normal Task Queue Size: %llu\n", get_queue_size(normal_task_queue));
-			NVMEV_INFO("Pid: %llu\n", current->pid);
-
-			memset(&proc_edge_struct, 0, sizeof(struct PROC_EDGE));
-			get_queue_front(normal_task_queue, &proc_edge_struct);
-			NVMEV_INFO("Queue Front src_vertex_slba (BAfter): %llu\n", proc_edge_struct.src_vertex_slba);
-			
+			NVMEV_INFO("[%s] Normal Task Queue Size: %llu\n", nvmev_vdev->virt_name, get_queue_size(normal_task_queue));
 			memset(&proc_edge_struct, 0, sizeof(struct PROC_EDGE));
 			get_queue_back(normal_task_queue, &proc_edge_struct);
-			NVMEV_INFO("Queue back src_vertex_slba: %llu\n", proc_edge_struct.src_vertex_slba);
+			NVMEV_INFO("Edge Block Slba: %llu Length: %u\n", proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
 		}
 		break;
 	default:
