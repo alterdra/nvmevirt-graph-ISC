@@ -9,7 +9,7 @@
 #include <sys/stat.h>
 
 #define NVME_DEVICE_0 "/dev/nvme0n1"
-#define NVME_DEVICE_1 "/dev/nvme0n1"
+#define NVME_DEVICE_1 "/dev/nvme1n1"
 
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
