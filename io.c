@@ -6,6 +6,11 @@
 #include <linux/highmem.h>
 #include <linux/sched/clock.h>
 
+// SSE
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <asm/fpu/api.h>
+
 #include "nvmev.h"
 #include "dma.h"
 #include "core/queue.h"
@@ -45,6 +50,46 @@ static inline size_t __cmd_io_offset(struct nvme_rw_command *cmd)
 static inline size_t __cmd_io_size(struct nvme_rw_command *cmd)
 {
 	return (cmd->length + 1) << LBA_BITS;
+}
+
+void __do_perform_edge_proc(void)
+{
+	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+	struct queue *future_task_queue = &(nvmev_vdev->future_task_queue);
+
+	const int vertex_size = 4;
+	const int edge_size = 8;    //Unweighted
+
+	while(normal_task_queue->size || future_task_queue->size)
+	{
+		if(normal_task_queue->size)
+		{
+			struct PROC_EDGE task;
+			queue_dequeue(normal_task_queue, &task);
+
+			// Process the edges
+			int* storage = nvmev_vdev->ns[task.nsid].mapped;
+			float* src_vtx = (float*)storage + task.src_vertex_slba / vertex_size;
+			int* outdegree = storage + task.outdegree_slba / vertex_size;
+			int* e = storage + task.edge_block_slba / vertex_size;
+			int* e_end = e + task.edge_block_len / vertex_size;
+			NVMEV_INFO("[%s] [%s]: nsid: %d, storage_start: %llu, edge-block-%u-%u: edge_slba: %llu, edge_len: %llu\n", 
+				nvmev_vdev->virt_name, __func__, task.nsid, storage, task.r, task.c, task.edge_block_slba, task.edge_block_len);
+			// int* dsy_vtx = storage + task.dst_vertex_slba;
+			for(; e < e_end; e += edge_size / vertex_size)
+			{	
+				// if (e == NULL || !virt_addr_valid(e)) {
+				// 	NVMEV_ERROR("Invalid e vaddr: %llu\n", e);
+				// 	return;
+				// }
+				kernel_fpu_begin();
+				int u = *e, v = *(e + 1);
+				float res =  *(src_vtx + u) / *(outdegree + u);
+				NVMEV_INFO("[edge_proc] edge %d %d, outdegree: %d, val: %f\n", u, v, *(outdegree + u), res);
+				kernel_fpu_end();
+			}
+		}
+	}
 }
 
 static unsigned int __do_perform_io(int sqid, int sq_entry)
@@ -95,9 +140,11 @@ static unsigned int __do_perform_io(int sqid, int sq_entry)
 		if (cmd->opcode == nvme_cmd_write ||
 		    cmd->opcode == nvme_cmd_zone_append) {
 			memcpy(nvmev_vdev->ns[nsid].mapped + offset, vaddr + mem_offs, io_size);
-			NVMEV_INFO("[__do_perform_io()] [nvme_cmd_write] Prp1 address: %llx, Virt address: %llx\n", paddr, vaddr);
+			// NVMEV_INFO("[__do_perform_io()] [nvme_cmd_write] Prp1 address: %llx, Virt address: %llx\n", paddr, vaddr);
+			NVMEV_INFO("[%s][write] NSID: %d, Storage virt addr: %llu, IO size: %d\n", __func__, nsid, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 		} else if (cmd->opcode == nvme_cmd_read) {
 			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
+			// NVMEV_INFO("[%s][read] NSID: %d, Storage virt addr: %llu, IO size: %d\n", __func__, nsid, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 		}
 		kunmap_atomic(vaddr);
 
@@ -583,6 +630,9 @@ static int nvmev_io_worker(void *data)
 
 		volatile unsigned int curr = worker->io_seq;
 		int qidx;
+
+		// Edge Processing: normal and future queue
+		__do_perform_edge_proc();
 
 		while (curr != -1) {
 			struct nvmev_io_work *w = &worker->work_queue[curr];

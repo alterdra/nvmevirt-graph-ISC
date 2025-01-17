@@ -11,7 +11,11 @@ CONFIG_NVMEVIRT_NVM := y
 
 obj-m   := $(TARGET).o
 $(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o
-ccflags-y += -Wno-unused-variable -Wno-unused-function
+ccflags-y += -Wno-unused-variable -Wno-unused-function 
+
+# cat /proc/cpuinfo | grep --color -i sse
+# Turn on SSE for FPU calculation
+ccflags-y += -msse -msse2 -msse4.1
 
 ccflags-$(CONFIG_NVMEVIRT_NVM) += -DBASE_SSD=INTEL_OPTANE -DVIRT_ID=${ID}
 $(TARGET)-$(CONFIG_NVMEVIRT_NVM) += simple_ftl.o

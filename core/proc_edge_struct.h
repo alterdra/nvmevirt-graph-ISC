@@ -13,6 +13,9 @@ struct PROC_EDGE {
     __u32 outdegree_len; // Length of outdegree data
     __u32 edge_block_len;      // Length of edge data
     __u32 version;            // Version of the structure
+
+    __u32 nsid;     // Namespace id, used by kernel module
+    __u32 r, c;    // Edge block id, for debugging
 } __attribute__((packed));
 
 #endif // PROC_EDGE_H

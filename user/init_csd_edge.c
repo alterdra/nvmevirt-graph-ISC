@@ -149,6 +149,9 @@ void malloc_edge_blocks_info()
     }
 }
 
+int __ceil(int x, int y){
+    return (x + y - 1) / y;
+}
 int init_csds_data(int* fd, void *buffer){
     
     int ret;
@@ -156,10 +159,13 @@ int init_csds_data(int* fd, void *buffer){
     struct nvme_user_io io;
 
     // Vertices data are all placed in CSDs
-    int total_vertex_size = num_vertices * vertex_size;
+    int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
     src_vertices_slba = 0;
-    dst_vertices_slba = src_vertices_slba + total_vertex_size;
-    outdegree_slba = dst_vertices_slba + total_vertex_size;
+    dst_vertices_slba = src_vertices_slba + total_vertex_size_aligned;
+    outdegree_slba = dst_vertices_slba + total_vertex_size_aligned;
+    printf("Src Vertices SLBA: %d\n", src_vertices_slba);
+    printf("Dst Vertices SLBA: %d\n", dst_vertices_slba);
+    printf("Outdegree SLBA: %d\n", outdegree_slba);
 
     sprintf(filename, "../LiveJournal.pl/outdegrees");
     int edge_block_base_slba[num_csds];
@@ -272,6 +278,7 @@ int csd_proc_edge_loop(int* fd, void *buffer)
         for(int r = 0; r < num_partitions; r++){
             for(int c = 0; c < num_partitions; c++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                    if(!(r == 5 && c == 1)) continue;
                     struct PROC_EDGE proc_edge_struct = 
                     {
                         .src_vertex_slba = src_vertices_slba,
@@ -281,6 +288,7 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                         .outdegree_len = vertex_size * num_vertices,
                         .edge_block_len = edge_blocks_length[r][c][csd_id],
                         .version = iter,
+                        .r = r, .c = c,
                     };
                     setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
                     ret = nvme_io_submit(fd[csd_id], &io);
@@ -315,7 +323,7 @@ int main()
     }
 
     init_csds_data(fd, buffer);
-    // test_edge_block(fd, buffer, 5, 4, 0);
+    // test_edge_block(fd, buffer, 5, 1, 0);
     // test_edge_block(fd, buffer, 5, 4, 1);
     for(int i = 0; i < num_csds; i++){
         if (fd[i] >= 0) {
@@ -332,6 +340,7 @@ int main()
     }
 
     csd_proc_edge_loop(fd, buffer);
+    // test_edge_block(fd, buffer, 5, 1, 0);
     cleanup(buffer);
     
     return 0;
