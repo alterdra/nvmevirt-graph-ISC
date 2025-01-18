@@ -64,6 +64,13 @@ void __do_perform_edge_proc(void)
 	{
 		if(normal_task_queue->size)
 		{
+			// HMB for normal value
+			float *normal_hmb_vaddr = (float*) phys_to_virt(nvmev_vdev->normal_hmb_phys_addr);
+			if (normal_hmb_vaddr == NULL || !virt_addr_valid(normal_hmb_vaddr)) {
+				NVMEV_ERROR("Invalid vaddr: %llx\n", normal_hmb_vaddr);
+				return;
+			}
+
 			struct PROC_EDGE task;
 			queue_dequeue(normal_task_queue, &task);
 
@@ -73,19 +80,23 @@ void __do_perform_edge_proc(void)
 			int* outdegree = storage + task.outdegree_slba / vertex_size;
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
+			// int* dsy_vtx = storage + task.dst_vertex_slba;
+
 			NVMEV_INFO("[%s] [%s]: nsid: %d, storage_start: %llu, edge-block-%u-%u: edge_slba: %llu, edge_len: %llu\n", 
 				nvmev_vdev->virt_name, __func__, task.nsid, storage, task.r, task.c, task.edge_block_slba, task.edge_block_len);
-			// int* dsy_vtx = storage + task.dst_vertex_slba;
+			
 			for(; e < e_end; e += edge_size / vertex_size)
 			{	
-				// if (e == NULL || !virt_addr_valid(e)) {
-				// 	NVMEV_ERROR("Invalid e vaddr: %llu\n", e);
-				// 	return;
-				// }
 				kernel_fpu_begin();
 				int u = *e, v = *(e + 1);
-				float res =  *(src_vtx + u) / *(outdegree + u);
-				NVMEV_INFO("[edge_proc] edge %d %d, outdegree: %d, val: %f\n", u, v, *(outdegree + u), res);
+				float res = src_vtx[u] / outdegree[u];
+				normal_hmb_vaddr[v] += res;
+
+				// Print the floating point result
+				unsigned int integer_part = (unsigned int)normal_hmb_vaddr[v]; // Extract integer part
+    			unsigned int fractional_part = (unsigned int)((normal_hmb_vaddr[v] - integer_part) * 1000000); // Extract fractional part
+				NVMEV_INFO("[edge_proc] edge %d %d, outdegree: %d, res: %u.%06u\n", u, v, outdegree[u], integer_part, fractional_part);
+				
 				kernel_fpu_end();
 			}
 		}
@@ -138,11 +149,14 @@ static unsigned int __do_perform_io(int sqid, int sq_entry)
 		}
 
 		if (cmd->opcode == nvme_cmd_write ||
-		    cmd->opcode == nvme_cmd_zone_append) {
+		    cmd->opcode == nvme_cmd_zone_append) 
+		{
 			memcpy(nvmev_vdev->ns[nsid].mapped + offset, vaddr + mem_offs, io_size);
 			// NVMEV_INFO("[__do_perform_io()] [nvme_cmd_write] Prp1 address: %llx, Virt address: %llx\n", paddr, vaddr);
-			NVMEV_INFO("[%s][write] NSID: %d, Storage virt addr: %llu, IO size: %d\n", __func__, nsid, nvmev_vdev->ns[nsid].mapped + offset, io_size);
-		} else if (cmd->opcode == nvme_cmd_read) {
+			// NVMEV_INFO("[%s][write] NSID: %d, Storage virt addr: %llu, IO size: %d\n", __func__, nsid, nvmev_vdev->ns[nsid].mapped + offset, io_size);
+		} 
+		else if (cmd->opcode == nvme_cmd_read) 
+		{
 			memcpy(vaddr + mem_offs, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 			// NVMEV_INFO("[%s][read] NSID: %d, Storage virt addr: %llu, IO size: %d\n", __func__, nsid, nvmev_vdev->ns[nsid].mapped + offset, io_size);
 		}

@@ -115,15 +115,28 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				return -EFAULT;
 			}
 			
-			struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
-			struct PROC_EDGE proc_edge_struct;
+			int csd_flag = cmd->rw.apptag;
+			if(csd_flag == CMD_INIT_HMB)
+			{
+				struct HMB hmb_struct;
+				memcpy(&hmb_struct, vaddr, sizeof(struct HMB));
+				nvmev_vdev->normal_hmb_phys_addr = hmb_struct.normal_hmb_phys_addr;
+				nvmev_vdev->future_hmb_phys_addr = hmb_struct.future_hmb_phys_addr;
+				NVMEV_INFO("[CMD_INIT_HMB] normal_hmb_phys_addr: %llu\n", nvmev_vdev->normal_hmb_phys_addr); 
+			}
+			else if(csd_flag == CMD_PROC_EDGE)
+			{
+				// Insert proc edge command into task queues
+				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+				struct PROC_EDGE proc_edge_struct;
 
-			memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
-			proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
-			queue_enqueue(normal_task_queue, proc_edge_struct);
+				memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
+				proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
+				queue_enqueue(normal_task_queue, proc_edge_struct);
 
-			NVMEV_INFO("Normal_task_queue size: %d, edge_slba: %llu, edge_len: %llu\n", 
-			get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
+				NVMEV_INFO("Normal_task_queue size: %d, edge_slba: %llu, edge_len: %llu\n", 
+				get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
+			}
 		}
 		break;
 	default:
