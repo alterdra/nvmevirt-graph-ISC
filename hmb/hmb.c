@@ -8,15 +8,16 @@
 struct hmb_device hmb_dev = {
     .buf1 = {
         .virt_addr = NULL,
-        .phys_addr = 2 * 1024 * 1024 * 1024UL,  /* Example: 3GB physical address */
+        .phys_addr = 7 * 1024 * 1024 * 1024UL,  /* Example: 3GB physical address */
         .size = HMB_SIZE
     },
     .buf2 = {
         .virt_addr = NULL,
-        .phys_addr = 2 * 1024 * 1024 * 1024UL + HMB_SIZE,  /* Example: 3GB + 256MB */
+        .phys_addr = 7 * 1024 * 1024 * 1024UL + HMB_SIZE,  /* Example: 3GB + 256MB */
         .size = HMB_SIZE
     }
 };
+EXPORT_SYMBOL(hmb_dev);
 
 static int major_number;
 static struct class *hmb_class;
@@ -100,7 +101,7 @@ void hmb_cleanup_device(void)
     unregister_chrdev(major_number, DEVICE_NAME);
 }
 
-int hmb_init(void)
+static int __init hmb_init(void)
 {
     int ret;
 
@@ -127,10 +128,16 @@ int hmb_init(void)
     return 0;
 }
 
-void hmb_exit(void)
+static void __exit hmb_exit(void)
 {
     hmb_cleanup_device();
     hmb_cleanup_buffer(&hmb_dev.buf1);
     hmb_cleanup_buffer(&hmb_dev.buf2);
     pr_info("HMB: Cleaned up\n");
 }
+
+module_init(hmb_init);
+module_exit(hmb_exit);
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Benny");
+MODULE_DESCRIPTION("Host Memory Buffer Driver starting at 7GB");

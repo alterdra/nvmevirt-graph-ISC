@@ -33,8 +33,8 @@ int hmb_init_buffer(struct hmb_buffer *buf, phys_addr_t phys_addr);
 void hmb_cleanup_buffer(struct hmb_buffer *buf);
 
 /* Module init and exit */
-int hmb_init(void);
-void hmb_exit(void);
+static int hmb_init(void);
+static void hmb_exit(void);
 
 /* Global variable declaration */
 extern struct hmb_device hmb_dev;

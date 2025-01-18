@@ -9,9 +9,12 @@ CONFIG_NVMEVIRT_NVM := y
 #CONFIG_NVMEVIRT_ZNS := y
 #CONFIG_NVMEVIRT_KV := y
 
-obj-m   := $(TARGET).o
-$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o core/hmb.o
+obj-m   := $(TARGET).o hmb/hmb.o
+$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o
 ccflags-y += -Wno-unused-variable -Wno-unused-function 
+
+# HMB
+ccflags-y += -I$(src)/hmb/include
 
 # cat /proc/cpuinfo | grep --color -i sse
 # Turn on SSE for FPU calculation

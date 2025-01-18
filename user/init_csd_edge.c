@@ -17,9 +17,9 @@
 #define MAX_NUM_CSDS 4
 
 // Virtual devices and file descripters
-const int num_csds = 1;
+const int num_csds = 2;
 const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1"};
-int fd[1] = {0};
+int fd[2] = {0};
 
 // Graph Dataset: Ex, LiveJournal
 const int num_partitions = 8;

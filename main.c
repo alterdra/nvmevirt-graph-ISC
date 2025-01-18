@@ -25,7 +25,6 @@
 
 // Graph Processing
 #include "core/queue.h"
-#include "core/hmb.h"
 
 /****************************************************************
  * Memory Layout
@@ -660,9 +659,6 @@ static int NVMeV_init(void)
 
 	pci_bus_add_devices(nvmev_vdev->virt_bus);
 
-	// Graph processing
-	hmb_init();
-
 	NVMEV_INFO("Virtual NVMe device created\n");
 
 	return 0;
@@ -700,9 +696,6 @@ static void NVMeV_exit(void)
 	}
 
 	VDEV_FINALIZE(nvmev_vdev);
-
-	// graph processing
-	hmb_exit();
 
 	NVMEV_INFO("Virtual NVMe device closed\n");
 }

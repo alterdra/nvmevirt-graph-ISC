@@ -16,7 +16,7 @@
 #include "nvmev.h"
 #include "dma.h"
 #include "core/queue.h"
-#include "core/hmb.h"
+#include <hmb.h>
 
 #if (SUPPORTED_SSD_TYPE(CONV) || SUPPORTED_SSD_TYPE(ZNS))
 #include "ssd.h"

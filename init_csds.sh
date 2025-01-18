@@ -1,28 +1,35 @@
 #!/bin/bash
-
-#sudo rmmod nvmev
-
-TARGET=$1
-
-#echo "Load nvme module"
-make clean
-make ID=$TARGET || exit
-
-echo "Load NVMeVirt kernel module...", $TARGET
-
-if [ $TARGET -eq 0 ]
-then
-	if lsmod | grep -q nvmev0; then
-        sudo rmmod nvmev0
-    fi
-
-	sudo insmod nvmev0.ko memmap_start=1G memmap_size=1G cpus=1,2
-
-elif [ $TARGET -eq 1 ]
-then
-	if lsmod | grep -q nvmev1; then
-        sudo rmmod nvmev1
-    fi
-
-	sudo insmod nvmev1.ko memmap_start=2G memmap_size=1G cpus=3,4
+if lsmod | grep -q nvmev0; then
+    sudo rmmod nvmev0
 fi
+if lsmod | grep -q nvmev1; then
+    sudo rmmod nvmev1
+fi
+if lsmod | grep -q hmb; then
+    sudo rmmod hmb
+fi
+
+
+make clean
+
+# Loop for IDs 0 and 1
+for ID in 0 1; do
+    echo "Building nvmev${ID}..."
+    make ID=$ID || exit
+
+    # Only load HMB once, before the first module
+    if [ $ID -eq 0 ]; then
+        echo "Load HMB kernel module..."
+        sudo insmod hmb/hmb.ko
+    fi
+
+    echo "Loading nvmev${ID}..."
+    case $ID in
+        0)
+            sudo insmod nvmev0.ko memmap_start=5G memmap_size=1G cpus=1,2
+            ;;
+        1)
+            sudo insmod nvmev1.ko memmap_start=6G memmap_size=1G cpus=3,4
+            ;;
+    esac
+done
