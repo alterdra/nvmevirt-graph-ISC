@@ -35,7 +35,7 @@ int outdegree_slba;
 int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
-float *normal_hmb, *future_hmb;
+int *normal_hmb, *future_hmb;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path, int blocking) {
@@ -97,8 +97,14 @@ int nvme_io_submit(int fd, struct nvme_user_io *io) {
 void cleanup(void *buffer) 
 {
     if(buffer) free(buffer);
-    if(normal_hmb) free(normal_hmb);
-    if(future_hmb) free(future_hmb);
+    if(normal_hmb) {
+        munlock(normal_hmb, sizeof(normal_hmb));
+        free(normal_hmb);
+    }
+    if(future_hmb){
+        munlock(future_hmb, sizeof(future_hmb));
+        free(future_hmb);
+    }
 
     for(int i = 0; i < num_csds; i++){
         if (fd[i] >= 0) {
@@ -180,9 +186,9 @@ int init_csds_data(int* fd, void *buffer){
 
     // Initialize all src vertex values to be 1 into nvme virtual devices (csd_id)
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        float* buffer_as_int = (float *)buffer;
-        for (size_t i = 0; i < buffer_size / sizeof(float); i++) {
-            buffer_as_int[i] = 1.0f;
+        float* buffer_as_float = (float*)buffer;
+        for (size_t i = 0; i < buffer_size / sizeof(int); i++) {
+            buffer_as_float[i] = 1.0;    // For float
         }
         for(int offset = 0; offset < total_vertex_size_aligned; offset += buffer_size){
             setup_nvme_command(&io, buffer, 0x01, (src_vertices_slba + offset) / SECTOR_SIZE);  // Setup write command
@@ -297,95 +303,6 @@ int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *
     return 0;
 }
 
-int setup_nvme_init_hmb_command(struct nvme_user_io *io, struct HMB *hmb_struct){
-    memset(io, 0, sizeof(*io));
-    io->opcode = 0x66;  // 0x66 for csd_proc_edge
-    io->apptag = CMD_INIT_HMB;    // 1 for init hmb/bitmap addresses
-    io->addr = (unsigned long long)hmb_struct;
-    return 0;
-}
-
-int64_t get_physical_address(void *virtual_address) 
-{
-    uint64_t virtual_page = (uint64_t)virtual_address / sysconf(_SC_PAGESIZE);
-    uint64_t page_offset = (uint64_t)virtual_address % sysconf(_SC_PAGESIZE);
-    uint64_t physical_page;
-    uint64_t physical_address = 0;
-
-    // Open /proc/self/pagemap
-    int pagemap_fd = open("/proc/self/pagemap", O_RDONLY);
-    if (pagemap_fd < 0) {
-        perror("Failed to open /proc/self/pagemap");
-        return 0;
-    }
-
-    // Seek to the relevant entry in pagemap
-    off_t offset = virtual_page * sizeof(uint64_t);
-    if (lseek(pagemap_fd, offset, SEEK_SET) == (off_t)-1) {
-        perror("Failed to seek in /proc/self/pagemap");
-        close(pagemap_fd);
-        return 0;
-    }
-
-    // Read the entry
-    if (read(pagemap_fd, &physical_page, sizeof(uint64_t)) != sizeof(uint64_t)) {
-        perror("Failed to read from /proc/self/pagemap");
-        close(pagemap_fd);
-        return 0;
-    }
-
-    close(pagemap_fd);
-
-    // Check if the page is present in memory
-    if (!(physical_page & (1ULL << 63))) {
-        fprintf(stderr, "Page is not present in memory\n");
-        return 0;
-    }
-
-    // Extract the physical page number (bits 0-54)
-    physical_page &= ((1ULL << 54) - 1);
-
-    // Calculate the physical address
-    physical_address = (physical_page * sysconf(_SC_PAGESIZE)) + page_offset;
-
-    return physical_address;
-}
-
-int init_hmb_addr(int* fd, void* buffer)
-{
-    int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
-    struct nvme_user_io io;
-    int ret;
-
-    // Initialize HMBs for aggregation
-    normal_hmb = (float*) allocate_dma_buffer(total_vertex_size_aligned);
-    if (!normal_hmb) {
-        cleanup(NULL);
-        return -1;
-    }
-    future_hmb = (float*) allocate_dma_buffer(total_vertex_size_aligned);
-    if (!future_hmb) {
-        cleanup(NULL);
-        return -1;
-    }
-    memset(normal_hmb, 0, sizeof(normal_hmb));
-    memset(future_hmb, 0, sizeof(future_hmb));
-
-    struct HMB hmb_struct = {
-        .normal_hmb_phys_addr = get_physical_address(normal_hmb),
-        .future_hmb_phys_addr = get_physical_address(future_hmb),
-    };
-
-    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        setup_nvme_init_hmb_command(&io, &hmb_struct);
-        ret = nvme_io_submit(fd[csd_id], &io);
-        if (ret < 0) {
-            cleanup(buffer);
-            return -1;
-        }
-    }
-}
-
 int csd_proc_edge_loop(int* fd, void *buffer)
 {
     struct nvme_user_io io;
@@ -440,7 +357,6 @@ int main()
     }
 
     init_csds_data(fd, buffer);
-    init_hmb_addr(fd, buffer);
     // test_edge_block(fd, buffer, 5, 1, 0);
     for(int i = 0; i < num_csds; i++){
         if (fd[i] >= 0) {

@@ -10,7 +10,7 @@ CONFIG_NVMEVIRT_NVM := y
 #CONFIG_NVMEVIRT_KV := y
 
 obj-m   := $(TARGET).o
-$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o
+$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o core/hmb.o
 ccflags-y += -Wno-unused-variable -Wno-unused-function 
 
 # cat /proc/cpuinfo | grep --color -i sse

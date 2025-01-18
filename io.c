@@ -9,11 +9,14 @@
 // SSE
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/sched.h>
 #include <asm/fpu/api.h>
+#include <asm/processor.h>
 
 #include "nvmev.h"
 #include "dma.h"
 #include "core/queue.h"
+#include "core/hmb.h"
 
 #if (SUPPORTED_SSD_TYPE(CONV) || SUPPORTED_SSD_TYPE(ZNS))
 #include "ssd.h"
@@ -52,6 +55,12 @@ static inline size_t __cmd_io_size(struct nvme_rw_command *cmd)
 	return (cmd->length + 1) << LBA_BITS;
 }
 
+void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
+{
+	*integer_part = (unsigned int)x; // Extract integer part
+	*fraction_part   = (unsigned int)((x - *integer_part) * 1000000); // Extract fractional part
+}
+
 void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
@@ -64,40 +73,44 @@ void __do_perform_edge_proc(void)
 	{
 		if(normal_task_queue->size)
 		{
-			// HMB for normal value
-			float *normal_hmb_vaddr = (float*) phys_to_virt(nvmev_vdev->normal_hmb_phys_addr);
-			if (normal_hmb_vaddr == NULL || !virt_addr_valid(normal_hmb_vaddr)) {
-				NVMEV_ERROR("Invalid vaddr: %llx\n", normal_hmb_vaddr);
-				return;
-			}
-
 			struct PROC_EDGE task;
 			queue_dequeue(normal_task_queue, &task);
 
 			// Process the edges
 			int* storage = nvmev_vdev->ns[task.nsid].mapped;
-			float* src_vtx = (float*)storage + task.src_vertex_slba / vertex_size;
+			float* src_vtx = (float*) storage + task.src_vertex_slba / vertex_size;
 			int* outdegree = storage + task.outdegree_slba / vertex_size;
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
 			// int* dsy_vtx = storage + task.dst_vertex_slba;
 
-			NVMEV_INFO("[%s] [%s]: nsid: %d, storage_start: %llu, edge-block-%u-%u: edge_slba: %llu, edge_len: %llu\n", 
-				nvmev_vdev->virt_name, __func__, task.nsid, storage, task.r, task.c, task.edge_block_slba, task.edge_block_len);
+			NVMEV_INFO("[%s] [%s]: edge-block-%u-%u: edge_slba: %llu, edge_len: %llu\n", nvmev_vdev->virt_name, __func__, task.r, task.c, task.edge_block_slba, task.edge_block_len);
+			NVMEV_INFO("[%s] [%s]: nsid: %d, storage_start: %llu", nvmev_vdev->virt_name, __func__, task.nsid, storage);
 			
+			int u = -1, v = -1;
 			for(; e < e_end; e += edge_size / vertex_size)
 			{	
-				kernel_fpu_begin();
-				int u = *e, v = *(e + 1);
-				float res = src_vtx[u] / outdegree[u];
-				normal_hmb_vaddr[v] += res;
-
-				// Print the floating point result
-				unsigned int integer_part = (unsigned int)normal_hmb_vaddr[v]; // Extract integer part
-    			unsigned int fractional_part = (unsigned int)((normal_hmb_vaddr[v] - integer_part) * 1000000); // Extract fractional part
-				NVMEV_INFO("[edge_proc] edge %d %d, outdegree: %d, res: %u.%06u\n", u, v, outdegree[u], integer_part, fractional_part);
+				u = *e, v = *(e + 1);
 				
+				// Error handling
+				if(outdegree[u] == 0)
+					NVMEV_INFO("Vertex %d has 0 outdegree\n");
+				
+				struct fpu *fpu = &current->thread.fpu;
+				kernel_fpu_begin_mask(&fpu->state.xsave);
+				hmb_dev.buf1.virt_addr[v] += src_vtx[u] / outdegree[u];
+
+				// Printing the float values in kernel
+				unsigned int i_src, f_src, i_dst, f_dst;
+				get_integer_and_fraction(src_vtx[u], &i_src, &f_src);
+				get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
+
 				kernel_fpu_end();
+				
+				NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
+				NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
+				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);
+				
 			}
 		}
 	}

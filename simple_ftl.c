@@ -116,15 +116,7 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 			}
 			
 			int csd_flag = cmd->rw.apptag;
-			if(csd_flag == CMD_INIT_HMB)
-			{
-				struct HMB hmb_struct;
-				memcpy(&hmb_struct, vaddr, sizeof(struct HMB));
-				nvmev_vdev->normal_hmb_phys_addr = hmb_struct.normal_hmb_phys_addr;
-				nvmev_vdev->future_hmb_phys_addr = hmb_struct.future_hmb_phys_addr;
-				NVMEV_INFO("[CMD_INIT_HMB] normal_hmb_phys_addr: %llu\n", nvmev_vdev->normal_hmb_phys_addr); 
-			}
-			else if(csd_flag == CMD_PROC_EDGE)
+			if(csd_flag == CMD_PROC_EDGE)
 			{
 				// Insert proc edge command into task queues
 				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);

@@ -3,7 +3,6 @@
 
 #include <linux/types.h> // For __u64 and __u32 definitions
 #define CMD_PROC_EDGE 0
-#define CMD_INIT_HMB 1
 
 struct PROC_EDGE {
     __u64 src_vertex_slba;
@@ -18,11 +17,5 @@ struct PROC_EDGE {
     __u32 nsid;     // Namespace id, used by kernel module
     __u32 r, c;    // Edge block id, for debugging
 } __attribute__((packed));
-
-struct HMB {
-    __u64 normal_hmb_phys_addr;
-    __u64 future_hmb_phys_addr;
-    __u64 edge_block_finished;
-};
 
 #endif // PROC_EDGE_H

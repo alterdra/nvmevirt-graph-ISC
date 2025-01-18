@@ -258,8 +258,6 @@ struct nvmev_dev {
 	u64 normal_hmb_phys_addr;
 	u64 future_hmb_phys_addr;
 	// Todo: CSD DRAM
-	// int num_partitions;
-	// int num_vertices;
 
 	unsigned int mdts;
 

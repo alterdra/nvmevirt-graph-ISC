@@ -25,6 +25,7 @@
 
 // Graph Processing
 #include "core/queue.h"
+#include "core/hmb.h"
 
 /****************************************************************
  * Memory Layout
@@ -196,6 +197,11 @@ static void NVMEV_DISPATCHER_INIT(struct nvmev_dev *nvmev_vdev)
 	// Graph  processing
 	queue_init(&(nvmev_vdev->normal_task_queue));
 	queue_init(&(nvmev_vdev->future_task_queue));
+
+	// For user buffer mapping
+	// nvmev_vdev->normal_hmb = memremap(nvmev_vdev->config.storage_start, nvmev_vdev->config.storage_size, MEMREMAP_WB);
+	// nvmev_vdev->future_hmb = memremap(nvmev_vdev->config.storage_start, nvmev_vdev->config.storage_size, MEMREMAP_WB);
+
 
 	nvmev_vdev->nvmev_dispatcher = kthread_create(nvmev_dispatcher, NULL, "nvmev_dispatcher");
 	if (nvmev_vdev->config.cpu_nr_dispatcher != -1)
@@ -654,6 +660,9 @@ static int NVMeV_init(void)
 
 	pci_bus_add_devices(nvmev_vdev->virt_bus);
 
+	// Graph processing
+	hmb_init();
+
 	NVMEV_INFO("Virtual NVMe device created\n");
 
 	return 0;
@@ -691,6 +700,9 @@ static void NVMeV_exit(void)
 	}
 
 	VDEV_FINALIZE(nvmev_vdev);
+
+	// graph processing
+	hmb_exit();
 
 	NVMEV_INFO("Virtual NVMe device closed\n");
 }
