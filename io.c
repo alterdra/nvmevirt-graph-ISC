@@ -84,8 +84,8 @@ void __do_perform_edge_proc(void)
 			int* e_end = e + task.edge_block_len / vertex_size;
 			// int* dsy_vtx = storage + task.dst_vertex_slba;
 
-			NVMEV_INFO("[%s] [%s]: edge-block-%u-%u: edge_slba: %llu, edge_len: %llu\n", nvmev_vdev->virt_name, __func__, task.r, task.c, task.edge_block_slba, task.edge_block_len);
-			NVMEV_INFO("[%s] [%s]: nsid: %d, storage_start: %llu", nvmev_vdev->virt_name, __func__, task.nsid, storage);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u:", task.csd_id, __func__, task.r, task.c);
+			NVMEV_INFO("edge_slba: %llu, edge_len: %llu, nsid: %d, storage_start: %llu", task.edge_block_slba, task.edge_block_len, task.nsid, storage);
 			
 			int u = -1, v = -1;
 			for(; e < e_end; e += edge_size / vertex_size)
@@ -112,6 +112,9 @@ void __do_perform_edge_proc(void)
 				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);
 				
 			}
+			// For task.csd_id, Edge task.r, task.c is finished
+			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+			hmb_dev.done.virt_addr[id] = 1;
 		}
 	}
 }

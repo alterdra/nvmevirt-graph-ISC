@@ -53,6 +53,9 @@ static unsigned long long __schedule_io_units(int opcode, unsigned long lba, uns
 
 	latest = max(nsecs_start, nvmev_vdev->io_unit_stat[io_unit]) + delay;
 
+	// NVMEV_INFO("[%s], length: %d, start time(ns): %llu, end time(ns): %llu, latency: %u", __func__, length, nsecs_start, latest, latency);
+
+
 	do {
 		latest += latency;
 		nvmev_vdev->io_unit_stat[io_unit] = latest;
@@ -105,29 +108,36 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 		break;
 	case nvme_cmd_csd_process_edge:
 		{
-			// Dispatcher
-			NVMEV_INFO("[%s] [%s] [nvme_cmd_csd_proc_edge]\n", nvmev_vdev->virt_name, __func__);
-
 			void *vaddr = phys_to_virt(cmd->rw.prp1);
 			// NVMEV_INFO("prp1: %llx\n, vaddr: %llx", cmd->rw.prp1, vaddr);
 			if (vaddr == NULL || !virt_addr_valid(vaddr)) {
 				NVMEV_ERROR("Invalid vaddr: %llx\n", vaddr);
 				return -EFAULT;
 			}
+
 			
 			int csd_flag = cmd->rw.apptag;
 			if(csd_flag == CMD_PROC_EDGE)
 			{
-				// Insert proc edge command into task queues
-				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+				// Dispatcher
 				struct PROC_EDGE proc_edge_struct;
-
 				memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
 				proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
-				queue_enqueue(normal_task_queue, proc_edge_struct);
+				
+				NVMEV_INFO("[CSD %d, %s()] [nvme_cmd_csd_proc_edge]\n", proc_edge_struct.csd_id, __func__);
 
-				NVMEV_INFO("Normal_task_queue size: %d, edge_slba: %llu, edge_len: %llu\n", 
-				get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
+				// Schedule the I/O, get the target I/O complete time
+				__u64 current_time = __get_wallclock();
+				ret->nsecs_target = __schedule_io_units(
+				cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
+				__u64 finished_time = ret->nsecs_target - current_time;
+				
+				// Insert proc edge command into task queues
+				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+				queue_enqueue(normal_task_queue, proc_edge_struct);
+				NVMEV_INFO("Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu", 
+					get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
+				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(ns)\n", ret->nsecs_target, finished_time);
 			}
 		}
 		break;

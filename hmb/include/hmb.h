@@ -15,10 +15,17 @@ struct hmb_buffer {
     size_t size;           /* Size of memory region */
 };
 
+struct hmb_bitmap_buffer {
+    bool *virt_addr;         /* Kernel virtual address of mapped memory */
+    phys_addr_t phys_addr;  /* Physical address of memory region */
+    size_t size;           /* Size of memory region */
+};
+
 /* Structure for HMB device */
 struct hmb_device {
     struct hmb_buffer buf1;  /* First 256MB buffer */
     struct hmb_buffer buf2;  /* Second 256MB buffer */
+    struct hmb_bitmap_buffer done;  /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
 };
 
 /* mmap operation for user space mapping */
@@ -31,6 +38,8 @@ void hmb_cleanup_device(void);
 /* Memory management */
 int hmb_init_buffer(struct hmb_buffer *buf, phys_addr_t phys_addr);
 void hmb_cleanup_buffer(struct hmb_buffer *buf);
+int hmb_init_bitmap_buffer(struct hmb_bitmap_buffer *buf, phys_addr_t phys_addr);
+void hmb_cleanup_bitmap_buffer(struct hmb_bitmap_buffer *buf);
 
 /* Module init and exit */
 static int hmb_init(void);

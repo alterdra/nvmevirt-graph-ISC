@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 
 #include "../core/proc_edge_struct.h"
+#include "hmb_mmap.h"
 
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
@@ -169,7 +170,15 @@ int __ceil(int x, int y){
     return (x + y - 1) / y;
 }
 
-int init_csds_data(int* fd, void *buffer){
+int init_csds_data(int* fd, void *buffer)
+{
+    // Open NVMeVirt devices: Blocking
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        fd[csd_id] = open_nvme_device(device[csd_id], 1);
+        if (fd[csd_id] < 0) {
+            return -1;
+        }
+    }
     
     int ret;
     char filename[50];
@@ -266,6 +275,15 @@ int init_csds_data(int* fd, void *buffer){
             printf("\n");
         }
     }
+
+
+    // Closing the fds (Blocking I/O)
+    for(int i = 0; i < num_csds; i++){
+        if (fd[i] >= 0) {
+            close(fd[i]);
+        }
+    }
+
     return 0;
 }
 
@@ -273,7 +291,7 @@ int test_edge_block(int* fd, void *buffer, int r, int c, int csd_id)
 {
     int ret;
     struct nvme_user_io io;
-    memset(buffer, 0, sizeof(buffer));
+    memset(buffer, 0, buffer_size);
     int offset = 0;
 
     printf("Edge block %d-%d size at CSD %d: %d\n", r, c, csd_id, edge_blocks_length[r][c][csd_id]);
@@ -293,6 +311,7 @@ int test_edge_block(int* fd, void *buffer, int r, int c, int csd_id)
         // }
         offset += buffer_size;
     }
+    return 0;
 }
 
 int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *proc_edge_struct) {
@@ -308,6 +327,23 @@ int csd_proc_edge_loop(int* fd, void *buffer)
     struct nvme_user_io io;
     int ret;
 
+    struct hmb_device hmb_dev = {0};
+    /* Initialize HMB */
+    if (hmb_init(&hmb_dev) < 0) {
+        fprintf(stderr, "Failed to initialize HMB\n");
+        return 1;
+    }
+    printf("HMB initialized successfully\n");
+
+    for(int c = 0; c < num_partitions; c++){
+        for(int r = 0; r < num_partitions; r++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
+            }
+        }
+    }
+
     for(int iter = 0; iter < 1; iter++){
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
@@ -318,11 +354,11 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                         .src_vertex_slba = src_vertices_slba,
                         .outdegree_slba = outdegree_slba,
                         .edge_block_slba = edge_blocks_slba[r][c][csd_id],
-                        .vertex_len = vertex_size * num_vertices,
-                        .outdegree_len = vertex_size * num_vertices,
                         .edge_block_len = edge_blocks_length[r][c][csd_id],
                         .version = iter,
-                        .r = r, .c = c,
+                        .r = r, .c = c, .csd_id = csd_id,
+                        .num_partitions = num_partitions,
+                        .num_csds = num_csds
                     };
                     setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
                     ret = nvme_io_submit(fd[csd_id], &io);
@@ -332,25 +368,34 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                     }
                 }
             }
+            // Todo: end of column aggregation
+        }
+        // Todo: for convergence
+    }
+
+
+    for(int c = 0; c < num_partitions; c++){
+        for(int r = 0; r < num_partitions; r++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
+            }
         }
     }
+    for(int i = num_vertices - 1; i >= num_vertices - 10; i--)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf1.virt_addr[i]);
+
+    /* Clean up */
+    hmb_cleanup(&hmb_dev);
+    printf("HMB cleaned up\n");
+    
+    return 0;
 }
 
 int main() 
 {
-    void *buffer;
-    struct nvme_user_io io;
-    
-    // Open NVMeVirt devices: Blocking
-    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id], 1);
-        if (fd[csd_id] < 0) {
-            return -1;
-        }
-    }
-    
     // Allocate buffer
-    buffer = allocate_dma_buffer(buffer_size);
+    void *buffer = allocate_dma_buffer(buffer_size);
     if (!buffer) {
         cleanup(NULL);
         return -1;
@@ -358,11 +403,6 @@ int main()
 
     init_csds_data(fd, buffer);
     // test_edge_block(fd, buffer, 5, 1, 0);
-    for(int i = 0; i < num_csds; i++){
-        if (fd[i] >= 0) {
-            close(fd[i]);
-        }
-    }
 
     // Open NVMeVirt devices: Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
