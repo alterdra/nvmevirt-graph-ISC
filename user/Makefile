@@ -14,7 +14,7 @@ TARGET = init_csd_edge
 all: $(TARGET)
 
 $(TARGET): $(SRC) $(HEADERS)
-	$(CC) $(CFLAGS) -o $@ $(SRC)
+	$(CC) $(CFLAGS) -o $@ $(SRC) -lrt
 
 clean:
 	rm -f $(TARGET)

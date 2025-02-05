@@ -9,6 +9,7 @@
 #include <linux/nvme_ioctl.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <time.h>
 
 #include "../core/proc_edge_struct.h"
 #include "hmb_mmap.h"
@@ -32,6 +33,7 @@ const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 // Edge Processing;
 int src_vertices_slba;
 int dst_vertices_slba;
+int fut_vertices_slba;
 int outdegree_slba;
 int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
@@ -188,7 +190,9 @@ int init_csds_data(int* fd, void *buffer)
     int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
     src_vertices_slba = 0;
     dst_vertices_slba = src_vertices_slba + total_vertex_size_aligned;
-    outdegree_slba = dst_vertices_slba + total_vertex_size_aligned;
+    fut_vertices_slba = dst_vertices_slba + total_vertex_size_aligned;
+
+    outdegree_slba = fut_vertices_slba + total_vertex_size_aligned;
     printf("Src Vertices SLBA: %d\n", src_vertices_slba);
     printf("Dst Vertices SLBA: %d\n", dst_vertices_slba);
     printf("Outdegree SLBA: %d\n", outdegree_slba);
@@ -322,6 +326,12 @@ int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *
     return 0;
 }
 
+long long get_time_ns() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+}
+
 int csd_proc_edge_loop(int* fd, void *buffer)
 {
     struct nvme_user_io io;
@@ -335,16 +345,11 @@ int csd_proc_edge_loop(int* fd, void *buffer)
     }
     printf("HMB initialized successfully\n");
 
-    for(int c = 0; c < num_partitions; c++){
-        for(int r = 0; r < num_partitions; r++){
-            for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
-            }
-        }
-    }
+    int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
 
-    for(int iter = 0; iter < 1; iter++){
+    for(int iter = 0; iter < 2; iter++)
+    {
+        // 1. Iter: Sending ioctl command for all edge blocks
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -360,28 +365,80 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                         .num_partitions = num_partitions,
                         .num_csds = num_csds
                     };
+
+                    long long start_ns = get_time_ns();
                     setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
                     ret = nvme_io_submit(fd[csd_id], &io);
                     if (ret < 0) {
                         cleanup(buffer);
                         return -1;
                     }
+                    long long end_ns = get_time_ns();
+
+                    int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                    printf("IOCTL Just ended: CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
+                    printf("IOCTL execution time: %lld ns (%lld us, %lld ms), edge_block_size: %d\n\n",
+                    end_ns - start_ns, (end_ns - start_ns) / 1000, (end_ns - start_ns) / 1000000, edge_blocks_length[r][c][csd_id]);
                 }
             }
-            // Todo: end of column aggregation
+        }
+
+        // 2. Aggregate for each columns
+
+        // calculate parition size
+        int partition_size = num_vertices / num_partitions;
+        int partition_remainder = num_vertices % num_partitions;
+
+        for(int c = 0; c < num_partitions; c++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++)
+            {
+                // Check a column of edge blocks
+                bool can_aggr = false;
+                do {
+                    can_aggr = true;
+                    for(int r = 0; r < num_partitions; r++){
+                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(!hmb_dev.done.virt_addr[id]){
+                            can_aggr = false;
+                            break;
+                        }
+                    }
+                } while(!can_aggr);
+
+                // Conv the values, for convergence
+                int partition_start, partition_end;
+                for(int v = partition_start; v < partition_end; v++)
+                    hmb_dev.buf1.virt_addr[v] = 0.15 + 0.85 * hmb_dev.buf1.virt_addr[v];
+
+                // Writing back vertices values to CSDs
+                // for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                //     float* buffer_as_float = (float*)buffer;
+                //     for (size_t i = 0; i < buffer_size / sizeof(int); i++) {
+                //         buffer_as_float[i] = 1.0;    // For float
+                //     }
+                //     for(int offset = 0; offset < total_vertex_size_aligned; offset += buffer_size){
+                //         setup_nvme_command(&io, buffer, 0x01, (src_vertices_slba + offset) / SECTOR_SIZE);  // Setup write command
+                //         ret = nvme_io_submit(fd[csd_id], &io);
+                //         if (ret < 0) {
+                //             cleanup(buffer);
+                //             return -1;
+                //         }
+                //     }
+                // }
+            }   
         }
         // Todo: for convergence
     }
 
 
-    for(int c = 0; c < num_partitions; c++){
-        for(int r = 0; r < num_partitions; r++){
-            for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
-            }
-        }
-    }
+    // for(int c = 0; c < num_partitions; c++){
+    //     for(int r = 0; r < num_partitions; r++){
+    //         for(int csd_id = 0; csd_id < num_csds; csd_id++){
+    //             int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+    //             printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
+    //         }
+    //     }
+    // }
     for(int i = num_vertices - 1; i >= num_vertices - 10; i--)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf1.virt_addr[i]);
 
@@ -404,7 +461,7 @@ int main()
     init_csds_data(fd, buffer);
     // test_edge_block(fd, buffer, 5, 1, 0);
 
-    // Open NVMeVirt devices: Blocking
+    // Open NVMeVirt devices: Non_Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         fd[csd_id] = open_nvme_device(device[csd_id], 0);
         if (fd[csd_id] < 0) {

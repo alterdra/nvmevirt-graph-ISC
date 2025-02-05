@@ -49,12 +49,24 @@ static unsigned long long __schedule_io_units(int opcode, unsigned long lba, uns
 		delay = nvmev_vdev->config.read_delay;
 		latency = nvmev_vdev->config.read_time;
 		trailing = nvmev_vdev->config.read_trailing;
+	} else if (opcode == nvme_cmd_csd_process_edge) {
+		delay = nvmev_vdev->config.read_delay;
+		latency = nvmev_vdev->config.read_time;
+		trailing = nvmev_vdev->config.read_trailing;
 	}
+
 
 	latest = max(nsecs_start, nvmev_vdev->io_unit_stat[io_unit]) + delay;
 
-	// NVMEV_INFO("[%s], length: %d, start time(ns): %llu, end time(ns): %llu, latency: %u", __func__, length, nsecs_start, latest, latency);
-
+	// Seperate nvme_cmd_csd_process_edge
+	// For synchronous ioctl
+	if(opcode == nvme_cmd_csd_process_edge){
+		do {
+			latest += latency;
+			length -= min(length, io_unit_size);
+		} while (length > 0);
+	}
+	return latest;
 
 	do {
 		latest += latency;
@@ -131,13 +143,14 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				ret->nsecs_target = __schedule_io_units(
 				cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
 				__u64 finished_time = ret->nsecs_target - current_time;
+				proc_edge_struct.nsecs_target = ret->nsecs_target;
 				
 				// Insert proc edge command into task queues
 				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 				queue_enqueue(normal_task_queue, proc_edge_struct);
 				NVMEV_INFO("Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu", 
 					get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
-				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(ns)\n", ret->nsecs_target, finished_time);
+				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
 			}
 		}
 		break;

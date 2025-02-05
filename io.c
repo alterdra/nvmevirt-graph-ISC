@@ -5,6 +5,7 @@
 #include <linux/ktime.h>
 #include <linux/highmem.h>
 #include <linux/sched/clock.h>
+#include <linux/delay.h>
 
 // SSE
 #include <linux/module.h>
@@ -85,7 +86,7 @@ void __do_perform_edge_proc(void)
 			// int* dsy_vtx = storage + task.dst_vertex_slba;
 
 			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u:", task.csd_id, __func__, task.r, task.c);
-			NVMEV_INFO("edge_slba: %llu, edge_len: %llu, nsid: %d, storage_start: %llu", task.edge_block_slba, task.edge_block_len, task.nsid, storage);
+			// NVMEV_INFO("edge_slba: %llu, edge_len: %llu, nsid: %d, storage_start: %llu", task.edge_block_slba, task.edge_block_len, task.nsid, storage);
 			
 			int u = -1, v = -1;
 			for(; e < e_end; e += edge_size / vertex_size)
@@ -107,14 +108,20 @@ void __do_perform_edge_proc(void)
 
 				kernel_fpu_end();
 				
-				NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
-				NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
-				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);
+				// NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
+				// NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
+				// NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);
 				
 			}
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 			hmb_dev.done.virt_addr[id] = 1;
+
+			// Edge_block I/O blocking
+			// Todo: hrtimer.h
+			while(ktime_get_ns() < task.nsecs_target){
+				usleep_range(10, 20);
+			}
 		}
 	}
 }
@@ -520,9 +527,39 @@ static size_t __nvmev_proc_io(int sqid, int sq_entry, size_t *io_size)
 	prev_clock2 = local_clock();
 #endif
 
-	// While loop processing 
+	// For graph processing asynchronous ioctl
+	if(cmd->common.opcode == nvme_cmd_csd_process_edge)
+	{
+		// Fill in the CQ entry
+		NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
+		int cqid = sq->cqid;
+		unsigned int command_id = sq_entry(sq_entry).common.command_id;
+		unsigned int status = ret.status;
 
-	__enqueue_io_req(sqid, sq->cqid, sq_entry, nsecs_start, &ret);
+		struct nvmev_completion_queue *cq = nvmev_vdev->cqes[cqid];
+		int cq_head = cq->cq_head;
+		struct nvme_completion *cqe = &cq_entry(cq_head);
+
+		spin_lock(&cq->entry_lock);
+		cqe->command_id = command_id;
+		cqe->sq_id = sqid;
+		cqe->sq_head = sq_entry;
+		cqe->status = cq->phase | (status << 1);
+		// cqe->result0 = result0;
+		// cqe->result1 = result1;
+
+		if (++cq_head == cq->queue_size) {
+			cq_head = 0;
+			cq->phase = !cq->phase;
+		}
+
+		cq->cq_head = cq_head;
+		cq->interrupt_ready = true;
+		spin_unlock(&cq->entry_lock);
+	}
+	else{
+		__enqueue_io_req(sqid, sq->cqid, sq_entry, nsecs_start, &ret);
+	}
 
 #ifdef PERF_DEBUG
 	prev_clock3 = local_clock();

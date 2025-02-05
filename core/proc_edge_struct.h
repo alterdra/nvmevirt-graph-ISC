@@ -20,6 +20,7 @@ struct PROC_EDGE
     // For aggregation to HMB done buffer
     __u32 r, c, csd_id; 
     __u32 num_partitions, num_csds;
+    __u32 nsecs_target;
 
 } __attribute__((packed));
 
