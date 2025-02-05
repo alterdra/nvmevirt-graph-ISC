@@ -23,8 +23,9 @@ struct hmb_bitmap_buffer {
 
 /* Structure for HMB device */
 struct hmb_device {
-    struct hmb_buffer buf1;  /* First 256MB buffer */
-    struct hmb_buffer buf2;  /* Second 256MB buffer */
+    struct hmb_buffer buf0;  /* First 256MB buffer (v_t) */
+    struct hmb_buffer buf1;  /* Second 256MB buffer (v_t+1) */
+    struct hmb_buffer buf2;  /* Third 256MB buffer (v_t+2)*/
     struct hmb_bitmap_buffer done;  /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
 };
 

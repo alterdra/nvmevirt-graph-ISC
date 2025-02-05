@@ -386,48 +386,31 @@ int csd_proc_edge_loop(int* fd, void *buffer)
         // 2. Aggregate for each columns
 
         // calculate parition size
-        int partition_size = num_vertices / num_partitions;
-        int partition_remainder = num_vertices % num_partitions;
+        // int partition_size = num_vertices / num_partitions;
+        // int partition_remainder = num_vertices % num_partitions;
 
-        for(int c = 0; c < num_partitions; c++){
-            for(int csd_id = 0; csd_id < num_csds; csd_id++)
-            {
-                // Check a column of edge blocks
-                bool can_aggr = false;
-                do {
-                    can_aggr = true;
-                    for(int r = 0; r < num_partitions; r++){
-                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                        if(!hmb_dev.done.virt_addr[id]){
-                            can_aggr = false;
-                            break;
-                        }
-                    }
-                } while(!can_aggr);
+        // for(int c = 0; c < num_partitions; c++){
+        //     for(int csd_id = 0; csd_id < num_csds; csd_id++)
+        //     {
+        //         // Check a column of edge blocks
+        //         bool can_aggr = false;
+        //         do {
+        //             can_aggr = true;
+        //             for(int r = 0; r < num_partitions; r++){
+        //                 int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+        //                 if(!hmb_dev.done.virt_addr[id]){
+        //                     can_aggr = false;
+        //                     break;
+        //                 }
+        //             }
+        //         } while(!can_aggr);
 
-                // Conv the values, for convergence
-                int partition_start, partition_end;
-                for(int v = partition_start; v < partition_end; v++)
-                    hmb_dev.buf1.virt_addr[v] = 0.15 + 0.85 * hmb_dev.buf1.virt_addr[v];
-
-                // Writing back vertices values to CSDs
-                // for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                //     float* buffer_as_float = (float*)buffer;
-                //     for (size_t i = 0; i < buffer_size / sizeof(int); i++) {
-                //         buffer_as_float[i] = 1.0;    // For float
-                //     }
-                //     for(int offset = 0; offset < total_vertex_size_aligned; offset += buffer_size){
-                //         setup_nvme_command(&io, buffer, 0x01, (src_vertices_slba + offset) / SECTOR_SIZE);  // Setup write command
-                //         ret = nvme_io_submit(fd[csd_id], &io);
-                //         if (ret < 0) {
-                //             cleanup(buffer);
-                //             return -1;
-                //         }
-                //     }
-                // }
-            }   
-        }
-        // Todo: for convergence
+        //         // Conv the values, for convergence
+        //         int partition_start, partition_end;
+        //         for(int v = partition_start; v < partition_end; v++)
+        //             hmb_dev.buf1.virt_addr[v] = 0.15 + 0.85 * hmb_dev.buf1.virt_addr[v];
+        //     }   
+        // }
     }
 
 

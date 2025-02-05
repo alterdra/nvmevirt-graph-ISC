@@ -23,8 +23,9 @@ struct hmb_bitmap_buffer {
 };
 
 struct hmb_device {
-    struct hmb_buffer buf1;
-    struct hmb_buffer buf2;
+    struct hmb_buffer buf0; /*v_t*/
+    struct hmb_buffer buf1; /*v_t+1*/
+    struct hmb_buffer buf2; /*v_t+2*/
     struct hmb_bitmap_buffer done;
     int fd;                  /* Device file descriptor */
 };

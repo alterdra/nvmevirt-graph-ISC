@@ -16,36 +16,50 @@ int hmb_init(struct hmb_device *dev)
         return -1;
     }
 
-    /* Map first buffer */
-    dev->buf1.size = HMB_SIZE;
-    dev->buf1.virt_addr = mmap(NULL, HMB_SIZE, 
+    /* Map v_t between host and csds*/
+    dev->buf0.size = HMB_SIZE;
+    dev->buf0.virt_addr = mmap(NULL, HMB_SIZE, 
                               PROT_READ | PROT_WRITE,
                               MAP_SHARED, dev->fd, 0);
     if (dev->buf1.virt_addr == MAP_FAILED) {
-        perror("mmap buffer 1 failed");
+        perror("mmap buffer 0 (v_t) failed");
         close(dev->fd);
         return -1;
     }
 
-    /* Map second buffer */
+    /* Map v_t+1 */
+    dev->buf1.size = HMB_SIZE;
+    dev->buf1.virt_addr = mmap(NULL, HMB_SIZE, 
+                              PROT_READ | PROT_WRITE,
+                              MAP_SHARED, dev->fd, HMB_SIZE);
+    if (dev->buf1.virt_addr == MAP_FAILED) {
+        perror("mmap buffer 1 (v_t+1)failed");
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        close(dev->fd);
+        return -1;
+    }
+
+    /* Map v_t+2 */
     dev->buf2.size = HMB_SIZE;
     dev->buf2.virt_addr = mmap(NULL, HMB_SIZE, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE);
+                              MAP_SHARED, dev->fd, HMB_SIZE * 2);
     if (dev->buf2.virt_addr == MAP_FAILED) {
-        perror("mmap buffer 2 failed");
+        perror("mmap buffer 2 (v_t+2) failed");
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         close(dev->fd);
         return -1;
     }
 
     /* Map third buffer */
-    dev->done.size = HMB_SIZE;
-    dev->done.virt_addr = mmap(NULL, HMB_SIZE, 
+    dev->done.size = HMB_SIZE / 2;
+    dev->done.virt_addr = mmap(NULL, HMB_SIZE / 2, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE * 2);
+                              MAP_SHARED, dev->fd, HMB_SIZE * 3);
     if (dev->done.virt_addr == MAP_FAILED) {
-        perror("mmap buffer 2 failed");
+        perror("mmap buffer done failed");
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
         close(dev->fd);
@@ -57,6 +71,8 @@ int hmb_init(struct hmb_device *dev)
 
 void hmb_cleanup(struct hmb_device *dev)
 {
+    if (dev->buf0.virt_addr)
+        munmap((void*)dev->buf1.virt_addr, dev->buf0.size);
     if (dev->buf1.virt_addr)
         munmap((void*)dev->buf1.virt_addr, dev->buf1.size);
     if (dev->buf2.virt_addr)
@@ -80,6 +96,12 @@ int test_hmb()
 
     printf("HMB initialized successfully\n");
 
+    /* Test write to 0-th buffer */
+    printf("Writing to buffer 0...\n");
+    for (i = 0; i < 10; i++) {
+        dev.buf0.virt_addr[i] = (i) * 1.0;
+    }
+
     /* Test write to first buffer */
     printf("Writing to buffer 1...\n");
     for (i = 0; i < 10; i++) {
@@ -100,6 +122,11 @@ int test_hmb()
 
 
     /* Read and verify data from both buffers */
+    printf("Reading from buffer 0:\n");
+    for (i = 0; i < 10; i++) {
+        printf("buf0[%d] = %f\n", i, dev.buf0.virt_addr[i]);
+    }
+
     printf("Reading from buffer 1:\n");
     for (i = 0; i < 10; i++) {
         printf("buf1[%d] = %f\n", i, dev.buf1.virt_addr[i]);
@@ -117,11 +144,15 @@ int test_hmb()
 
     /* Test large offset access */
     printf("\nTesting larger offsets...\n");
-    size_t large_offset = (MB_256/sizeof(int)) - 1;
+    size_t large_offset = (MB_256/sizeof(float)) - 1;
+
+    dev.buf0.virt_addr[large_offset] = 0.97;
     dev.buf1.virt_addr[large_offset] = 0.99;
     dev.buf2.virt_addr[large_offset] = 1.98;
-    dev.done.virt_addr[large_offset] = 8;
+    dev.done.virt_addr[large_offset] = 0;
     
+    printf("Offset: %ld\n", large_offset);
+    printf("Last element buf0: %f\n", dev.buf0.virt_addr[large_offset]);
     printf("Last element buf1: %f\n", dev.buf1.virt_addr[large_offset]);
     printf("Last element buf2: %f\n", dev.buf2.virt_addr[large_offset]);
     printf("Last element done: %d\n", dev.done.virt_addr[large_offset]);

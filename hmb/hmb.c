@@ -6,20 +6,25 @@
 
 #define MEM_START 7 * 1024 * 1024 * 1024UL
 struct hmb_device hmb_dev = {
-    .buf1 = {
+    .buf0 = {
         .virt_addr = NULL,
         .phys_addr = MEM_START,  /* MEM_START = 7GB, Size = 256MB */
         .size = HMB_SIZE
     },
-    .buf2 = {
+    .buf1 = {
         .virt_addr = NULL,
         .phys_addr = MEM_START + HMB_SIZE,  /* MEM_START = 7GB + 256MB, Size = 256MB */
         .size = HMB_SIZE
     },
+    .buf2 = {
+        .virt_addr = NULL,
+        .phys_addr = MEM_START + HMB_SIZE * 2,  /* MEM_START = 7GB + 512MB, Size = 256MB */
+        .size = HMB_SIZE
+    },
     .done = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE * 2,  
-        .size = HMB_SIZE    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
+        .phys_addr = MEM_START + HMB_SIZE * 3,  
+        .size = HMB_SIZE / 2    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
     }
 };
 EXPORT_SYMBOL(hmb_dev);
@@ -42,10 +47,12 @@ int hmb_mmap(struct file *file, struct vm_area_struct *vma)
 
     /* Select which buffer based on offset */
     if (offset == 0) {
-        buf = &hmb_dev.buf1;
+        buf = &hmb_dev.buf0;
     } else if (offset == HMB_SIZE) {
-        buf = &hmb_dev.buf2;
+        buf = &hmb_dev.buf1;
     } else if (offset == HMB_SIZE * 2) {
+        buf = &hmb_dev.buf2;
+    } else if (offset == HMB_SIZE * 3){
         done = &hmb_dev.done;
     } else {
         return -EINVAL;
@@ -144,19 +151,26 @@ static int __init hmb_init(void)
 {
     int ret;
 
-    /* Initialize both buffers */
-    ret = hmb_init_buffer(&hmb_dev.buf1, hmb_dev.buf1.phys_addr);
+    ret = hmb_init_buffer(&hmb_dev.buf0, hmb_dev.buf0.phys_addr);
     if (ret < 0)
         return ret;
+    
+    ret = hmb_init_buffer(&hmb_dev.buf1, hmb_dev.buf1.phys_addr);
+    if (ret < 0){
+        hmb_cleanup_buffer(&hmb_dev.buf0);
+        return ret;
+    }
 
     ret = hmb_init_buffer(&hmb_dev.buf2, hmb_dev.buf2.phys_addr);
     if (ret < 0) {
+        hmb_cleanup_buffer(&hmb_dev.buf0);
         hmb_cleanup_buffer(&hmb_dev.buf1);
         return ret;
     }
 
     ret = hmb_init_bitmap_buffer(&hmb_dev.done, hmb_dev.done.phys_addr);
     if (ret < 0) {
+        hmb_cleanup_buffer(&hmb_dev.buf0);
         hmb_cleanup_buffer(&hmb_dev.buf1);
         hmb_cleanup_buffer(&hmb_dev.buf2);
         return ret;
@@ -165,6 +179,7 @@ static int __init hmb_init(void)
     /* Setup device */
     ret = hmb_setup_device();
     if (ret < 0) {
+        hmb_cleanup_buffer(&hmb_dev.buf0);
         hmb_cleanup_buffer(&hmb_dev.buf1);
         hmb_cleanup_buffer(&hmb_dev.buf2);
         hmb_cleanup_bitmap_buffer(&hmb_dev.done);
@@ -178,6 +193,7 @@ static int __init hmb_init(void)
 static void __exit hmb_exit(void)
 {
     hmb_cleanup_device();
+    hmb_cleanup_buffer(&hmb_dev.buf0);
     hmb_cleanup_buffer(&hmb_dev.buf1);
     hmb_cleanup_buffer(&hmb_dev.buf2);
     pr_info("HMB: Cleaned up\n");
