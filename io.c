@@ -6,6 +6,7 @@
 #include <linux/highmem.h>
 #include <linux/sched/clock.h>
 #include <linux/delay.h>
+#include <linux/preempt.h>
 
 // SSE
 #include <linux/module.h>
@@ -58,8 +59,8 @@ static inline size_t __cmd_io_size(struct nvme_rw_command *cmd)
 
 void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 {
-	*integer_part = (unsigned int)x; // Extract integer part
-	*fraction_part   = (unsigned int)((x - *integer_part) * 1000000); // Extract fractional part
+	*integer_part = (int)x; // Extract integer part
+	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
 }
 
 void __do_perform_edge_proc(void)
@@ -79,7 +80,6 @@ void __do_perform_edge_proc(void)
 
 			// Process the edges
 			int* storage = nvmev_vdev->ns[task.nsid].mapped;
-			float* src_vtx = (float*) storage + task.src_vertex_slba / vertex_size;
 			int* outdegree = storage + task.outdegree_slba / vertex_size;
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
@@ -97,21 +97,18 @@ void __do_perform_edge_proc(void)
 				if(outdegree[u] == 0)
 					NVMEV_INFO("Vertex %d has 0 outdegree\n");
 				
-				struct fpu *fpu = &current->thread.fpu;
-				kernel_fpu_begin_mask(&fpu->state.xsave);
-				hmb_dev.buf1.virt_addr[v] += src_vtx[u] / outdegree[u];
+				preempt_disable();
+				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
+				preempt_enable();
 
 				// Printing the float values in kernel
 				unsigned int i_src, f_src, i_dst, f_dst;
-				get_integer_and_fraction(src_vtx[u], &i_src, &f_src);
+				get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
 				get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
 
-				kernel_fpu_end();
-				
 				// NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
 				// NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
-				// NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);
-				
+				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
 			}
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;

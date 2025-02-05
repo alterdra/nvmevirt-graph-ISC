@@ -30,15 +30,17 @@ const int vertex_size = 4;
 const int edge_size = 8;    //Unweighted
 const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 
-// Edge Processing;
-int src_vertices_slba;
+// Vertex data and aggregation info
+struct hmb_device hmb_dev = {0};
+// Not used after user-kernel shared hmb struct
+int src_vertices_slba;      
 int dst_vertices_slba;
 int fut_vertices_slba;
+
+// Edge Processing;
 int outdegree_slba;
 int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
-
-int *normal_hmb, *future_hmb;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path, int blocking) {
@@ -100,15 +102,6 @@ int nvme_io_submit(int fd, struct nvme_user_io *io) {
 void cleanup(void *buffer) 
 {
     if(buffer) free(buffer);
-    if(normal_hmb) {
-        munlock(normal_hmb, sizeof(normal_hmb));
-        free(normal_hmb);
-    }
-    if(future_hmb){
-        munlock(future_hmb, sizeof(future_hmb));
-        free(future_hmb);
-    }
-
     for(int i = 0; i < num_csds; i++){
         if (fd[i] >= 0) {
             close(fd[i]);
@@ -174,46 +167,36 @@ int __ceil(int x, int y){
 
 int init_csds_data(int* fd, void *buffer)
 {
-    // Open NVMeVirt devices: Blocking
+    /* Open NVMeVirt devices: Blocking */
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         fd[csd_id] = open_nvme_device(device[csd_id], 1);
         if (fd[csd_id] < 0) {
             return -1;
         }
     }
+
+    /* Initialize HMB */
+    if (hmb_init(&hmb_dev) < 0) {
+        fprintf(stderr, "Failed to initialize HMB\n");
+        return 1;
+    }
+    printf("HMB initialized successfully\n");
     
     int ret;
     char filename[50];
     struct nvme_user_io io;
 
-    // Vertices data are all placed in CSDs
-    int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
-    src_vertices_slba = 0;
-    dst_vertices_slba = src_vertices_slba + total_vertex_size_aligned;
-    fut_vertices_slba = dst_vertices_slba + total_vertex_size_aligned;
-
-    outdegree_slba = fut_vertices_slba + total_vertex_size_aligned;
-    printf("Src Vertices SLBA: %d\n", src_vertices_slba);
-    printf("Dst Vertices SLBA: %d\n", dst_vertices_slba);
-    printf("Outdegree SLBA: %d\n", outdegree_slba);
-
-    // Initialize all src vertex values to be 1 into nvme virtual devices (csd_id)
-    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        float* buffer_as_float = (float*)buffer;
-        for (size_t i = 0; i < buffer_size / sizeof(int); i++) {
-            buffer_as_float[i] = 1.0;    // For float
-        }
-        for(int offset = 0; offset < total_vertex_size_aligned; offset += buffer_size){
-            setup_nvme_command(&io, buffer, 0x01, (src_vertices_slba + offset) / SECTOR_SIZE);  // Setup write command
-            ret = nvme_io_submit(fd[csd_id], &io);
-            if (ret < 0) {
-                cleanup(buffer);
-                return -1;
-            }
-        }
+    // Initialize all v_t values
+    for(int i = 0; i < num_vertices; i++){
+        hmb_dev.buf0.virt_addr[i] = 1.0;
+        hmb_dev.buf1.virt_addr[i] = 0.0f;
+        hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
+    for(int i = num_vertices - 1; i >= num_vertices - 10; i--)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf1.virt_addr[i]);
 
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
+    outdegree_slba = 0;
     sprintf(filename, "../LiveJournal.pl/outdegrees");
     int edge_block_base_slba[num_csds];
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -273,8 +256,7 @@ int init_csds_data(int* fd, void *buffer)
                 edge_blocks_slba[i][j][csd_id] = edge_block_base_slba[csd_id];
                 edge_block_base_slba[csd_id] += offset;
 
-                printf("Wrote Edge block %d-%d for CSD %d: slba: %d, size: %d, aligned size: %d\n"
-                , i, j, csd_id, edge_blocks_slba[i][j][csd_id], edge_blocks_length[i][j][csd_id], offset);
+                // printf("Wrote Edge block %d-%d for CSD %d: slba: %d, size: %d, aligned size: %d\n", i, j, csd_id, edge_blocks_slba[i][j][csd_id], edge_blocks_length[i][j][csd_id], offset);
             }
             printf("\n");
         }
@@ -336,15 +318,6 @@ int csd_proc_edge_loop(int* fd, void *buffer)
 {
     struct nvme_user_io io;
     int ret;
-
-    struct hmb_device hmb_dev = {0};
-    /* Initialize HMB */
-    if (hmb_init(&hmb_dev) < 0) {
-        fprintf(stderr, "Failed to initialize HMB\n");
-        return 1;
-    }
-    printf("HMB initialized successfully\n");
-
     int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
 
     for(int iter = 0; iter < 2; iter++)
@@ -376,9 +349,8 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                     long long end_ns = get_time_ns();
 
                     int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                    printf("IOCTL Just ended: CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
-                    printf("IOCTL execution time: %lld ns (%lld us, %lld ms), edge_block_size: %d\n\n",
-                    end_ns - start_ns, (end_ns - start_ns) / 1000, (end_ns - start_ns) / 1000000, edge_blocks_length[r][c][csd_id]);
+                    // printf("IOCTL Just ended: CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
+                    // printf("IOCTL execution time: %lld ns (%lld us, %lld ms), edge_block_size: %d\n\n", end_ns - start_ns, (end_ns - start_ns) / 1000, (end_ns - start_ns) / 1000000, edge_blocks_length[r][c][csd_id]);
                 }
             }
         }

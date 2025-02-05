@@ -21,7 +21,7 @@ int hmb_init(struct hmb_device *dev)
     dev->buf0.virt_addr = mmap(NULL, HMB_SIZE, 
                               PROT_READ | PROT_WRITE,
                               MAP_SHARED, dev->fd, 0);
-    if (dev->buf1.virt_addr == MAP_FAILED) {
+    if (dev->buf0.virt_addr == MAP_FAILED) {
         perror("mmap buffer 0 (v_t) failed");
         close(dev->fd);
         return -1;

@@ -26,10 +26,13 @@ for ID in 0 1; do
     echo "Loading nvmev${ID}..."
     case $ID in
         0)
-            sudo insmod nvmev0.ko memmap_start=5G memmap_size=1G cpus=1,2
+            sudo insmod nvmev0.ko memmap_start=9G memmap_size=1G cpus=1,2
             ;;
         1)
-            sudo insmod nvmev1.ko memmap_start=6G memmap_size=1G cpus=3,4
+            sudo insmod nvmev1.ko memmap_start=10G memmap_size=1G cpus=3,4
             ;;
     esac
 done
+
+# sudo cat /proc/iomem
+# Checking valid System RAM
