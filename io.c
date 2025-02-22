@@ -106,8 +106,8 @@ void __do_perform_edge_proc(void)
 				get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
 				get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
 
-				// NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
-				// NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
+				NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
+				NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
 				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
 			}
 			// For task.csd_id, Edge task.r, task.c is finished

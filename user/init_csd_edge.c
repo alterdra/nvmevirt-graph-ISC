@@ -142,6 +142,10 @@ int min(int x, int y){
     return x < y ? x : y;
 }
 
+int max(int x, int y){
+    return x > y ? x : y;
+}
+
 void malloc_edge_blocks_info()
 {
     // Initialize 3d array for edge blocks metadata
@@ -318,9 +322,8 @@ int csd_proc_edge_loop(int* fd, void *buffer)
 {
     struct nvme_user_io io;
     int ret;
-    int total_vertex_size_aligned = __ceil(num_vertices * vertex_size, buffer_size) * buffer_size;
 
-    for(int iter = 0; iter < 2; iter++)
+    for(int iter = 0; iter < 1; iter++)
     {
         // 1. Iter: Sending ioctl command for all edge blocks
         for(int c = 0; c < num_partitions; c++){
@@ -339,16 +342,16 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                         .num_csds = num_csds
                     };
 
-                    long long start_ns = get_time_ns();
+                    // long long start_ns = get_time_ns();
                     setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
                     ret = nvme_io_submit(fd[csd_id], &io);
                     if (ret < 0) {
                         cleanup(buffer);
                         return -1;
                     }
-                    long long end_ns = get_time_ns();
+                    // long long end_ns = get_time_ns();
 
-                    int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                    // int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                     // printf("IOCTL Just ended: CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
                     // printf("IOCTL execution time: %lld ns (%lld us, %lld ms), edge_block_size: %d\n\n", end_ns - start_ns, (end_ns - start_ns) / 1000, (end_ns - start_ns) / 1000000, edge_blocks_length[r][c][csd_id]);
                 }
@@ -356,46 +359,65 @@ int csd_proc_edge_loop(int* fd, void *buffer)
         }
 
         // 2. Aggregate for each columns
+        for(int c = 0; c < num_partitions; c++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++)
+            {
+                // Check a column of edge blocks
+                bool can_aggr = false;
+                do {
+                    can_aggr = true;
+                    for(int r = 0; r < num_partitions; r++){
+                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(!hmb_dev.done.virt_addr[id]){
+                            can_aggr = false;
+                            break;
+                        }
+                    }
+                } while(!can_aggr);
+            }
 
-        // calculate parition size
-        // int partition_size = num_vertices / num_partitions;
-        // int partition_remainder = num_vertices % num_partitions;
+            // LUMOS's get_partition_range in partition.hpp
+            size_t begin, end;
+            const size_t split_partition = num_vertices % num_partitions;
+            const size_t partition_size = num_vertices / num_partitions + 1;
+            size_t partition_id = c;
+            if (partition_id < split_partition) {
+                begin = partition_id * partition_size;
+                end = (partition_id + 1) * partition_size;
+            }
+            else{
+                const size_t split_point = split_partition * partition_size;
+                begin = split_point + (partition_id - split_partition) * (partition_size - 1);
+                end = split_point + (partition_id - split_partition + 1) * (partition_size - 1);
+            }
 
-        // for(int c = 0; c < num_partitions; c++){
-        //     for(int csd_id = 0; csd_id < num_csds; csd_id++)
-        //     {
-        //         // Check a column of edge blocks
-        //         bool can_aggr = false;
-        //         do {
-        //             can_aggr = true;
-        //             for(int r = 0; r < num_partitions; r++){
-        //                 int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-        //                 if(!hmb_dev.done.virt_addr[id]){
-        //                     can_aggr = false;
-        //                     break;
-        //                 }
-        //             }
-        //         } while(!can_aggr);
+            // Conv the values, for convergence
+            for(size_t v = begin; v < end; v++)
+                hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+        }
 
-        //         // Conv the values, for convergence
-        //         int partition_start, partition_end;
-        //         for(int v = partition_start; v < partition_end; v++)
-        //             hmb_dev.buf1.virt_addr[v] = 0.15 + 0.85 * hmb_dev.buf1.virt_addr[v];
-        //     }   
-        // }
+        // 3. End of the iter update
+        for(int v = 0; v < num_vertices; v++){
+            hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
+            hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
+            hmb_dev.buf2.virt_addr[v] = 0.0;
+        }
+        for(int c = 0; c < num_partitions; c++){
+            for(int r = 0; r < num_partitions; r++){
+                for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                    int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                    hmb_dev.done.virt_addr[id] = 0;
+                }
+            }
+        }
     }
 
+    // Check the first and last 10 vertices
+    for(int i = 0; i < min(10, num_vertices); i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
-    // for(int c = 0; c < num_partitions; c++){
-    //     for(int r = 0; r < num_partitions; r++){
-    //         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-    //             int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-    //             printf("CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
-    //         }
-    //     }
-    // }
-    for(int i = num_vertices - 1; i >= num_vertices - 10; i--)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf1.virt_addr[i]);
 
     /* Clean up */
     hmb_cleanup(&hmb_dev);
