@@ -18,6 +18,7 @@
 #include "nvmev.h"
 #include "dma.h"
 #include "core/queue.h"
+#include "core/fixed_point.h"
 #include <hmb.h>
 
 #if (SUPPORTED_SSD_TYPE(CONV) || SUPPORTED_SSD_TYPE(ZNS))
@@ -97,9 +98,19 @@ void __do_perform_edge_proc(void)
 				if(outdegree[u] == 0)
 					NVMEV_INFO("Vertex %d has 0 outdegree\n");
 				
+				// In-kernel floating-point calculation
 				preempt_disable();
 				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
 				preempt_enable();
+
+				// Fixed-point calculation
+				// preempt_disable();
+				// fixed_t dst = float_to_fixed(hmb_dev.buf1.virt_addr[v]);
+				// fixed_t src = float_to_fixed(hmb_dev.buf0.virt_addr[u]);
+				// fixed_t outdegree_fixed = int_to_fixed(outdegree[u]);
+				// dst = fixed_add(dst, fixed_div(src, outdegree_fixed));
+				// hmb_dev.buf1.virt_addr[v] = fixed_to_float(dst);
+				// preempt_enable();
 
 				// Printing the float values in kernel
 				unsigned int i_src, f_src, i_dst, f_dst;

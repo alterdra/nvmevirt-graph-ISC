@@ -196,8 +196,6 @@ int init_csds_data(int* fd, void *buffer)
         hmb_dev.buf1.virt_addr[i] = 0.0f;
         hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
-    for(int i = num_vertices - 1; i >= num_vertices - 10; i--)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf1.virt_addr[i]);
 
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
     outdegree_slba = 0;
@@ -223,13 +221,15 @@ int init_csds_data(int* fd, void *buffer)
 
     // Read edge blocks and write 4KB buffer outdegree into nvme virtual device
     malloc_edge_blocks_info();
+    int total_edges_saved = 0;
     for(int i = 0; i < num_partitions; i++){
         for(int j = 0; j < num_partitions; j++)
         {
             sprintf(filename, "../LiveJournal.pl/block-%d-%d", i, j);
             int edge_block_size = getFileSize(filename);
             int num_edge = edge_block_size / edge_size;
-            printf("Edge block %d-%d Size: %d, Number of edges: %d\n", i, j, edge_block_size, num_edge);
+            total_edges_saved += num_edge;
+            // printf("Edge block %d-%d Size: %d, Number of edges: %d\n", i, j, edge_block_size, num_edge);
 
             // Divide an edge block into num_csds portions
             int csd_num_edges = num_edge / num_csds;
@@ -247,6 +247,14 @@ int init_csds_data(int* fd, void *buffer)
                 while (remaining > 0) {
                     int bytes = min(buffer_size, remaining);
                     fread(buffer, 1, bytes, file);
+
+                    // Print the edges
+                    for(int* e = buffer; e < buffer + bytes; e += edge_size / vertex_size){
+                        int u = *e, v = *(e + 1);
+                        if(v == 4847562)
+                            printf("Dst[%d], Src[%d]\n", v, u);
+                    }
+
                     setup_nvme_command(&io, buffer, 0x01, (edge_block_base_slba[csd_id] + offset) / SECTOR_SIZE);  // Setup write command
                     ret = nvme_io_submit(fd[csd_id], &io);
                     if (ret < 0) {
@@ -262,9 +270,9 @@ int init_csds_data(int* fd, void *buffer)
 
                 // printf("Wrote Edge block %d-%d for CSD %d: slba: %d, size: %d, aligned size: %d\n", i, j, csd_id, edge_blocks_slba[i][j][csd_id], edge_blocks_length[i][j][csd_id], offset);
             }
-            printf("\n");
         }
     }
+    printf("Wrote %d edges to CSDs\n", total_edges_saved);
 
 
     // Closing the fds (Blocking I/O)
