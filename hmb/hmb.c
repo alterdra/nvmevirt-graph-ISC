@@ -21,10 +21,20 @@ struct hmb_device hmb_dev = {
         .phys_addr = MEM_START + HMB_SIZE * 2,  /* MEM_START = 7GB + 512MB, Size = 256MB */
         .size = HMB_SIZE
     },
-    .done = {
+    .done1 = {
         .virt_addr = NULL,
         .phys_addr = MEM_START + HMB_SIZE * 3,  
-        .size = HMB_SIZE / 2    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
+        .size = HMB_SIZE / 4    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
+    },
+    .done2 = {
+        .virt_addr = NULL,
+        .phys_addr = MEM_START + HMB_SIZE * 3 + HMB_SIZE / 4,  
+        .size = HMB_SIZE / 4    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
+    },
+    .done_partition = {
+        .virt_addr = NULL,
+        .phys_addr = MEM_START + HMB_SIZE * 3 + HMB_SIZE * 2 / 4,  
+        .size = HMB_SIZE / 4
     }
 };
 EXPORT_SYMBOL(hmb_dev);
@@ -53,8 +63,13 @@ int hmb_mmap(struct file *file, struct vm_area_struct *vma)
     } else if (offset == HMB_SIZE * 2) {
         buf = &hmb_dev.buf2;
     } else if (offset == HMB_SIZE * 3){
-        done = &hmb_dev.done;
-    } else {
+        done = &hmb_dev.done1;
+    } else if (offset == HMB_SIZE * 3 + HMB_SIZE / 4){
+        done = &hmb_dev.done2;
+    } else if (offset == HMB_SIZE * 3 + HMB_SIZE * 2 / 4){
+        done = &hmb_dev.done_partition;
+    } 
+    else {
         return -EINVAL;
     }
 
@@ -168,11 +183,30 @@ static int __init hmb_init(void)
         return ret;
     }
 
-    ret = hmb_init_bitmap_buffer(&hmb_dev.done, hmb_dev.done.phys_addr);
+    ret = hmb_init_bitmap_buffer(&hmb_dev.done1, hmb_dev.done1.phys_addr);
     if (ret < 0) {
         hmb_cleanup_buffer(&hmb_dev.buf0);
         hmb_cleanup_buffer(&hmb_dev.buf1);
         hmb_cleanup_buffer(&hmb_dev.buf2);
+        return ret;
+    }
+
+    ret = hmb_init_bitmap_buffer(&hmb_dev.done2, hmb_dev.done2.phys_addr);
+    if (ret < 0) {
+        hmb_cleanup_buffer(&hmb_dev.buf0);
+        hmb_cleanup_buffer(&hmb_dev.buf1);
+        hmb_cleanup_buffer(&hmb_dev.buf2);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done1);
+        return ret;
+    }
+
+    ret = hmb_init_bitmap_buffer(&hmb_dev.done_partition, hmb_dev.done_partition.phys_addr);
+    if (ret < 0) {
+        hmb_cleanup_buffer(&hmb_dev.buf0);
+        hmb_cleanup_buffer(&hmb_dev.buf1);
+        hmb_cleanup_buffer(&hmb_dev.buf2);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done1);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done2);
         return ret;
     }
 
@@ -182,11 +216,13 @@ static int __init hmb_init(void)
         hmb_cleanup_buffer(&hmb_dev.buf0);
         hmb_cleanup_buffer(&hmb_dev.buf1);
         hmb_cleanup_buffer(&hmb_dev.buf2);
-        hmb_cleanup_bitmap_buffer(&hmb_dev.done);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done1);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done2);
+        hmb_cleanup_bitmap_buffer(&hmb_dev.done_partition);
         return ret;
     }
 
-    pr_info("HMB: Initialized with two 256MB buffers\n");
+    pr_info("HMB: Initialized with 3 256MB and 3 64MB buffers\n");
     return 0;
 }
 
@@ -203,4 +239,4 @@ module_init(hmb_init);
 module_exit(hmb_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Benny");
-MODULE_DESCRIPTION("Host Memory Buffer Driver starting at 7GB");
+MODULE_DESCRIPTION("Host Memory Buffer Driver starting at 11GB");

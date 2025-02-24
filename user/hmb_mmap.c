@@ -52,16 +52,47 @@ int hmb_init(struct hmb_device *dev)
         return -1;
     }
 
-    /* Map third buffer */
-    dev->done.size = HMB_SIZE / 2;
-    dev->done.virt_addr = mmap(NULL, HMB_SIZE / 2, 
+    /* Map done for normal values for edge blocks */
+    dev->done1.size = HMB_SIZE / 4;
+    dev->done1.virt_addr = mmap(NULL, HMB_SIZE / 4, 
                               PROT_READ | PROT_WRITE,
                               MAP_SHARED, dev->fd, HMB_SIZE * 3);
-    if (dev->done.virt_addr == MAP_FAILED) {
+    if (dev->done1.virt_addr == MAP_FAILED) {
         perror("mmap buffer done failed");
         munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
+        close(dev->fd);
+        return -1;
+    }
+
+    /* Map done for future values */
+    dev->done2.size = HMB_SIZE / 4;
+    dev->done2.virt_addr = mmap(NULL, HMB_SIZE / 4, 
+                              PROT_READ | PROT_WRITE,
+                              MAP_SHARED, dev->fd, HMB_SIZE * 3 + HMB_SIZE / 4);
+    if (dev->done2.virt_addr == MAP_FAILED) {
+        perror("mmap buffer done failed");
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
+        munmap((void*)dev->done1.virt_addr, HMB_SIZE / 4);
+        close(dev->fd);
+        return -1;
+    }
+
+    /* Map done for a partition (v_t+1) */
+    dev->done_partition.size = HMB_SIZE / 4;
+    dev->done_partition.virt_addr = mmap(NULL, HMB_SIZE / 4, 
+                              PROT_READ | PROT_WRITE,
+                              MAP_SHARED, dev->fd, HMB_SIZE * 3 + HMB_SIZE * 2 / 4);
+    if (dev->done_partition.virt_addr == MAP_FAILED) {
+        perror("mmap buffer done failed");
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
+        munmap((void*)dev->done1.virt_addr, HMB_SIZE / 4);
+        munmap((void*)dev->done2.virt_addr, HMB_SIZE / 4);
         close(dev->fd);
         return -1;
     }
@@ -77,8 +108,12 @@ void hmb_cleanup(struct hmb_device *dev)
         munmap((void*)dev->buf1.virt_addr, dev->buf1.size);
     if (dev->buf2.virt_addr)
         munmap((void*)dev->buf2.virt_addr, dev->buf2.size);
-    if (dev->done.virt_addr)
-        munmap((void*)dev->done.virt_addr, dev->done.size);
+    if (dev->done1.virt_addr)
+        munmap((void*)dev->done1.virt_addr, dev->done1.size);
+    if (dev->done2.virt_addr)
+        munmap((void*)dev->done2.virt_addr, dev->done2.size);
+    if (dev->done_partition.virt_addr)
+        munmap((void*)dev->done_partition.virt_addr, dev->done_partition.size);
     if (dev->fd >= 0)
         close(dev->fd);
 }
@@ -114,10 +149,22 @@ int test_hmb()
         dev.buf2.virt_addr[i] = (i + 200) * 1.0;
     }
 
-    /* Test write to done boolean buffer */
-    printf("Writing to done boolean buffer...\n");
+    /* Test write to done1 boolean buffer */
+    printf("Writing to done1 boolean buffer...\n");
     for (i = 0; i < 10; i++) {
-        dev.done.virt_addr[i] = i;
+        dev.done1.virt_addr[i] = i;
+    }
+
+    /* Test write to done2 boolean buffer */
+    printf("Writing to done2 boolean buffer...\n");
+    for (i = 0; i < 10; i++) {
+        dev.done2.virt_addr[i] = i;
+    }
+
+    /* Test write to done_partition boolean buffer */
+    printf("Writing to done_partition boolean buffer...\n");
+    for (i = 0; i < 10; i++) {
+        dev.done_partition.virt_addr[i] = i;
     }
 
 
@@ -137,25 +184,39 @@ int test_hmb()
         printf("buf2[%d] = %f\n", i, dev.buf2.virt_addr[i]);
     }
 
-    printf("\nReading from done boolean buffer:\n");
+    printf("\nReading from done1 boolean buffer:\n");
     for (i = 0; i < 10; i++) {
-        printf("done[%d] = %d\n", i, dev.done.virt_addr[i]);
+        printf("done1[%d] = %d\n", i, dev.done1.virt_addr[i]);
+    }
+
+    printf("\nReading from done2 boolean buffer:\n");
+    for (i = 0; i < 10; i++) {
+        printf("done2[%d] = %d\n", i, dev.done2.virt_addr[i]);
+    }
+
+    printf("\nReading from done_partition boolean buffer:\n");
+    for (i = 0; i < 10; i++) {
+        printf("done_partition[%d] = %d\n", i, dev.done_partition.virt_addr[i]);
     }
 
     /* Test large offset access */
     printf("\nTesting larger offsets...\n");
-    size_t large_offset = (MB_256/sizeof(float)) - 1;
+    size_t large_offset1 = (MB_256/sizeof(float)) - 1;
+    size_t large_offset2 = (MB_256/4/sizeof(float)) - 1;
 
-    dev.buf0.virt_addr[large_offset] = 0.97;
-    dev.buf1.virt_addr[large_offset] = 0.99;
-    dev.buf2.virt_addr[large_offset] = 1.98;
-    dev.done.virt_addr[large_offset] = 0;
+    dev.buf0.virt_addr[large_offset1] = 0.97;
+    dev.buf1.virt_addr[large_offset1] = 0.99;
+    dev.buf2.virt_addr[large_offset1] = 1.98;
+    dev.done1.virt_addr[large_offset2] = 1;
+    dev.done2.virt_addr[large_offset2] = 1;
+    dev.done_partition.virt_addr[large_offset2] = 1;
     
-    printf("Offset: %ld\n", large_offset);
-    printf("Last element buf0: %f\n", dev.buf0.virt_addr[large_offset]);
-    printf("Last element buf1: %f\n", dev.buf1.virt_addr[large_offset]);
-    printf("Last element buf2: %f\n", dev.buf2.virt_addr[large_offset]);
-    printf("Last element done: %d\n", dev.done.virt_addr[large_offset]);
+    printf("Last element buf0: %f\n", dev.buf0.virt_addr[large_offset1]);
+    printf("Last element buf1: %f\n", dev.buf1.virt_addr[large_offset1]);
+    printf("Last element buf2: %f\n", dev.buf2.virt_addr[large_offset1]);
+    printf("Last element done: %d\n", dev.done1.virt_addr[large_offset2]);
+    printf("Last element done: %d\n", dev.done2.virt_addr[large_offset2]);
+    printf("Last element done: %d\n", dev.done_partition.virt_addr[large_offset2]);
 
     /* Clean up */
     hmb_cleanup(&dev);

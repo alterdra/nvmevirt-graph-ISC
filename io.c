@@ -64,6 +64,60 @@ void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
 }
 
+void __do_perform_edge_proc_grafu(void)
+{
+	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+	const int vertex_size = 4;
+	const int edge_size = 8;    //Unweighted
+
+	while (normal_task_queue->size) {
+
+		struct PROC_EDGE task;
+		queue_dequeue(normal_task_queue, &task);
+
+		// Initialize the edge starting addresses
+		int* storage = nvmev_vdev->ns[task.nsid].mapped;
+		int* outdegree = storage + task.outdegree_slba / vertex_size;
+		int* e = storage + task.edge_block_slba / vertex_size;
+		int* e_end = e + task.edge_block_len / vertex_size;
+		NVMEV_INFO("[Grafu CSD %d, %s()]: Processing edge-block-%u-%u:", task.csd_id, __func__, task.r, task.c);
+
+		// Edge block read I/O
+		while(ktime_get_ns() < task.nsecs_target){
+			usleep_range(10, 20);
+		}
+		
+		// Process normal values and mark edge block processing done
+		int u = -1, v = -1;
+		for(; e < e_end; e += edge_size / vertex_size) {	
+			u = *e, v = *(e + 1);
+			preempt_disable();
+			hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
+			preempt_enable();
+		}
+		int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+		hmb_dev.done1.virt_addr[id] = 1;
+
+		// Waiting for the end of aggregation
+		// while(!hmb_dev.done_vertex.virt_addr[task.r]){
+		// 	usleep_range(10, 20);
+		// }
+
+		// Process future values and mark edge block processing done
+		if(task.iter != 0 || (task.iter == 0 && task.r <= task.c)) {
+			int u = -1, v = -1;
+			for(; e < e_end; e += edge_size / vertex_size) {	
+				u = *e, v = *(e + 1);
+				preempt_disable();
+				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
+				preempt_enable();
+			}
+			// Todo: done for future values
+			// hmb_dev.done2.virt_addr[id] = 1;
+		}
+	}
+}
+
 void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
@@ -123,7 +177,7 @@ void __do_perform_edge_proc(void)
 			}
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
-			hmb_dev.done.virt_addr[id] = 1;
+			hmb_dev.done1.virt_addr[id] = 1;
 
 			// Edge_block I/O blocking
 			// Todo: hrtimer.h

@@ -248,12 +248,12 @@ int init_csds_data(int* fd, void *buffer)
                     int bytes = min(buffer_size, remaining);
                     fread(buffer, 1, bytes, file);
 
-                    // Print the edges
-                    for(int* e = buffer; e < buffer + bytes; e += edge_size / vertex_size){
-                        int u = *e, v = *(e + 1);
-                        if(v == 4847562)
-                            printf("Dst[%d], Src[%d]\n", v, u);
-                    }
+                    // Print the edges for edge saving correctness
+                    // for(int* e = buffer; e < buffer + bytes; e += edge_size / vertex_size){
+                    //     int u = *e, v = *(e + 1);
+                    //     if(v == 4847562)
+                    //         printf("Dst[%d], Src[%d]\n", v, u);
+                    // }
 
                     setup_nvme_command(&io, buffer, 0x01, (edge_block_base_slba[csd_id] + offset) / SECTOR_SIZE);  // Setup write command
                     ret = nvme_io_submit(fd[csd_id], &io);
@@ -344,7 +344,7 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                         .outdegree_slba = outdegree_slba,
                         .edge_block_slba = edge_blocks_slba[r][c][csd_id],
                         .edge_block_len = edge_blocks_length[r][c][csd_id],
-                        .version = iter,
+                        .iter = iter,
                         .r = r, .c = c, .csd_id = csd_id,
                         .num_partitions = num_partitions,
                         .num_csds = num_csds
@@ -376,7 +376,7 @@ int csd_proc_edge_loop(int* fd, void *buffer)
                     can_aggr = true;
                     for(int r = 0; r < num_partitions; r++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                        if(!hmb_dev.done.virt_addr[id]){
+                        if(!hmb_dev.done1.virt_addr[id]){
                             can_aggr = false;
                             break;
                         }
@@ -402,6 +402,9 @@ int csd_proc_edge_loop(int* fd, void *buffer)
             // Conv the values, for convergence
             for(size_t v = begin; v < end; v++)
                 hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+            
+            // Notify CSD that partition c finish aggregation
+            hmb_dev.done_partition.virt_addr[c] = true;
         }
 
         // 3. End of the iter update
@@ -414,15 +417,18 @@ int csd_proc_edge_loop(int* fd, void *buffer)
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
                     int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                    hmb_dev.done.virt_addr[id] = 0;
+                    hmb_dev.done1.virt_addr[id] = hmb_dev.done2.virt_addr[id];
+                    hmb_dev.done2.virt_addr[id] = false;
                 }
             }
         }
+        for(int c = 0; c < num_partitions; c++)
+            hmb_dev.done_partition.virt_addr[c] = false;
     }
 
     // Check the first and last 10 vertices
-    for(int i = 0; i < min(10, num_vertices); i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = 0; i < min(10, num_vertices); i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
     for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 

@@ -23,10 +23,11 @@ struct hmb_bitmap_buffer {
 };
 
 struct hmb_device {
-    struct hmb_buffer buf0; /*v_t*/
-    struct hmb_buffer buf1; /*v_t+1*/
-    struct hmb_buffer buf2; /*v_t+2*/
-    struct hmb_bitmap_buffer done;
+    struct hmb_buffer buf0; // v_t
+    struct hmb_buffer buf1; // v_t+1
+    struct hmb_buffer buf2; // v_t+2
+    struct hmb_bitmap_buffer done1, done2;      // v_t+1, v_t+2 aggregation from CSDs
+    struct hmb_bitmap_buffer done_partition;    // v_t+1 conv notification to CSDs
     int fd;                  /* Device file descriptor */
 };
 

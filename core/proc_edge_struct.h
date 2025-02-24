@@ -13,7 +13,7 @@ struct PROC_EDGE
     // __u32 vertex_len;
     // __u32 outdegree_len;
     __u32 edge_block_len; 
-    __u32 version;
+    __u32 iter;
 
     __u32 nsid;     // Namespace id, used by kernel module
 
