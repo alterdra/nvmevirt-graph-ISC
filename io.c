@@ -64,43 +64,6 @@ void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
 }
 
-void __do_perform_edge_proc_grafu(void)
-{
-	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
-	const int vertex_size = 4;
-	const int edge_size = 8;    //Unweighted
-
-	while (normal_task_queue->size) {
-
-		struct PROC_EDGE task;
-		queue_dequeue(normal_task_queue, &task);
-
-		// Initialize the edge starting addresses
-		int* storage = nvmev_vdev->ns[task.nsid].mapped;
-		int* outdegree = storage + task.outdegree_slba / vertex_size;
-		int* e = storage + task.edge_block_slba / vertex_size;
-		int* e_end = e + task.edge_block_len / vertex_size;
-		NVMEV_INFO("[Grafu CSD %d, %s()]: Processing edge-block-%u-%u, version %d:", task.csd_id, __func__, task.r, task.c, task.iter);
-
-		// Edge block read I/O
-		while(ktime_get_ns() < task.nsecs_target){
-			usleep_range(10, 20);
-		}
-		
-		// Process normal values or future values according to iter in the command
-		int u = -1, v = -1;
-		for(; e < e_end; e += edge_size / vertex_size) {	
-			u = *e, v = *(e + 1);
-			preempt_disable();
-			if(task.iter == 0)
-				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
-			else
-				hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
-			preempt_enable();
-		}
-	}
-}
-
 void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
@@ -150,13 +113,13 @@ void __do_perform_edge_proc(void)
 				// preempt_enable();
 
 				// Printing the float values in kernel
-				unsigned int i_src, f_src, i_dst, f_dst;
-				get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
-				get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
+				// unsigned int i_src, f_src, i_dst, f_dst;
+				// get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
+				// get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
 
-				NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
-				NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
-				NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
+				// NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
+				// NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
+				// NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
 			}
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
@@ -564,7 +527,7 @@ static size_t __nvmev_proc_io(int sqid, int sq_entry, size_t *io_size)
 #endif
 
 	// Graph processing task queue
-	if (!ns->proc_io_cmd(ns, &req, &ret))
+	if (!ns->proc_io_cmd(ns, &req, &ret, sqid, sq_entry))
 		return false;
 	*io_size = __cmd_io_size(&sq_entry(sq_entry).rw);
 
@@ -573,37 +536,7 @@ static size_t __nvmev_proc_io(int sqid, int sq_entry, size_t *io_size)
 #endif
 
 	// For graph processing asynchronous ioctl
-	int csd_flag = cmd->rw.apptag;
-	if(cmd->common.opcode == nvme_cmd_csd_process_edge && csd_flag == ASYNC)
-	{
-		// Fill in the CQ entry
-		NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
-		int cqid = sq->cqid;
-		unsigned int command_id = sq_entry(sq_entry).common.command_id;
-		unsigned int status = ret.status;
-
-		struct nvmev_completion_queue *cq = nvmev_vdev->cqes[cqid];
-		int cq_head = cq->cq_head;
-		struct nvme_completion *cqe = &cq_entry(cq_head);
-
-		spin_lock(&cq->entry_lock);
-		cqe->command_id = command_id;
-		cqe->sq_id = sqid;
-		cqe->sq_head = sq_entry;
-		cqe->status = cq->phase | (status << 1);
-		// cqe->result0 = result0;
-		// cqe->result1 = result1;
-
-		if (++cq_head == cq->queue_size) {
-			cq_head = 0;
-			cq->phase = !cq->phase;
-		}
-
-		cq->cq_head = cq_head;
-		cq->interrupt_ready = true;
-		spin_unlock(&cq->entry_lock);
-	}
-	else{
+	if(cmd->common.opcode != nvme_cmd_csd_process_edge){
 		__enqueue_io_req(sqid, sq->cqid, sq_entry, nsecs_start, &ret);
 	}
 
@@ -746,7 +679,6 @@ static int nvmev_io_worker(void *data)
 
 		// Edge Processing: normal and future queue
 		__do_perform_edge_proc();
-		// __do_perform_edge_proc_grafu();
 
 		while (curr != -1) {
 			struct nvmev_io_work *w = &worker->work_queue[curr];

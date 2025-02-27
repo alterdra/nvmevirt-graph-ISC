@@ -474,14 +474,14 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
     for(int iter = 0; iter < num_iter; iter++)
     {
         // 1. Iter: Sending ioctl command for all edge blocks
-        if(iter == 0){
+        if(iter % 2 == 0){
             for(int c = 0; c < num_partitions; c++){
                 for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, ASYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -497,7 +497,7 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, ASYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -547,11 +547,11 @@ void test_sync_async(){
     int total_sync = 0, total_async = 0;
     for(int i = 0; i < 10; i++){
         s = get_time_ns();
-        send_proc_edge(0, 0, 0, 0, ASYNC);
+        send_proc_edge(5, 4, 0, 0, ASYNC);
         e = get_time_ns();
         total_async += e - s;
         s = get_time_ns();
-        send_proc_edge(0, 0, 0, 0, SYNC);
+        send_proc_edge(5, 4, 0, 0, SYNC);
         e = get_time_ns();
         total_sync += e - s;
     }
@@ -584,10 +584,10 @@ int main()
     //         return -1;
     //     }
     // }
-    // csd_proc_edge_loop(buffer, 5);
+    csd_proc_edge_loop(buffer, 5);
     // csd_proc_edge_loop_grafu(buffer, 5);
     // csd_proc_edge_loop_normal(buffer, 5);
-    test_sync_async();
+    // test_sync_async();
     cleanup(buffer);
     
     return 0;

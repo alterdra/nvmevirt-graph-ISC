@@ -298,7 +298,7 @@ struct nvmev_ns {
 
 	/*io command handler*/
 	bool (*proc_io_cmd)(struct nvmev_ns *ns, struct nvmev_request *req,
-			    struct nvmev_result *ret);
+			    struct nvmev_result *ret, int sqid, int sq_entry);
 
 	/*specific CSS io command identifier*/
 	bool (*identify_io_cmd)(struct nvmev_ns *ns, struct nvme_command cmd);

@@ -6,9 +6,16 @@
 
 #include <linux/sched.h>     // For task_struct and current
 #include <linux/sched/signal.h> // For accessing process structures
+#include <linux/preempt.h>
+#include <linux/sched/clock.h>
+#include <linux/delay.h>
 
 #include "simple_ftl.h"
 #include "core/queue.h"
+#include <hmb.h>
+
+#define sq_entry(entry_id) sq->sq[SQ_ENTRY_TO_PAGE_NUM(entry_id)][SQ_ENTRY_TO_PAGE_OFFSET(entry_id)]
+#define cq_entry(entry_id) cq->cq[CQ_ENTRY_TO_PAGE_NUM(entry_id)][CQ_ENTRY_TO_PAGE_OFFSET(entry_id)]
 
 static inline unsigned long long __get_wallclock(void)
 {
@@ -96,8 +103,37 @@ static unsigned long long __schedule_flush(struct nvmev_request *req)
 	return latest;
 }
 
+void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
+{
+	const int vertex_size = 4;
+	const int edge_size = 8;    //Unweighted
+
+	// Initialize the edge starting addresses
+	int* storage = nvmev_vdev->ns[task.nsid].mapped;
+	int* outdegree = storage + task.outdegree_slba / vertex_size;
+	int* e = storage + task.edge_block_slba / vertex_size;
+	int* e_end = e + task.edge_block_len / vertex_size;
+	NVMEV_INFO("[Grafu CSD %d, %s()]: Processing edge-block-%u-%u, version %d:, io_time: %d", task.csd_id, __func__, task.r, task.c, task.iter, task.nsecs_target);
+	
+	// Edge block read I/O
+	long long end_time = ktime_get_ns() + task.nsecs_target;
+	while(ktime_get_ns() < end_time);
+	
+	// Process normal values or future values according to iter in the command
+	int u = -1, v = -1;
+	for(; e < e_end; e += edge_size / vertex_size) {	
+		u = *e, v = *(e + 1);
+		preempt_disable();
+		if(task.iter == 0)
+			hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
+		else
+			hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
+		preempt_enable();
+	}
+}
+
 bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
-			     struct nvmev_result *ret)
+			     struct nvmev_result *ret, int sqid, int sq_entry)
 {
 	struct nvme_command *cmd = req->cmd;
 
@@ -139,14 +175,69 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 			ret->nsecs_target = __schedule_io_units(
 			cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
 			__u64 finished_time = ret->nsecs_target - current_time;
-			proc_edge_struct.nsecs_target = ret->nsecs_target;
+			proc_edge_struct.nsecs_target = finished_time;
 			
-			// Insert proc edge command into task queues
-			struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
-			queue_enqueue(normal_task_queue, proc_edge_struct);
-			NVMEV_INFO("Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu", 
-				get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
-			NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
+			// Synchronously process the edge processing command
+			int csd_flag = cmd->rw.apptag;
+			if(csd_flag == SYNC){
+				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
+				__do_perform_edge_proc_grafu(proc_edge_struct);
+			}
+
+			preempt_disable();
+			
+			// Fill in the CQ entry
+			NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
+			struct nvmev_submission_queue *sq = nvmev_vdev->sqes[sqid];
+			int cqid = sq->cqid;
+			unsigned int command_id = sq_entry(sq_entry).common.command_id;
+			unsigned int status = ret->status;
+			struct nvmev_completion_queue *cq = nvmev_vdev->cqes[cqid];
+			int cq_head = cq->cq_head;
+			struct nvme_completion *cqe = &cq_entry(cq_head);
+
+			spin_lock(&cq->entry_lock);
+			cqe->command_id = command_id;
+			cqe->sq_id = sqid;
+			cqe->sq_head = sq_entry;
+			cqe->status = cq->phase | (status << 1);
+			// cqe->result0 = result0;
+			// cqe->result1 = result1;
+			if (++cq_head == cq->queue_size) {
+				cq_head = 0;
+				cq->phase = !cq->phase;
+			}
+			cq->cq_head = cq_head;
+			cq->interrupt_ready = true;
+			spin_unlock(&cq->entry_lock);
+
+			// Process CQ entries to support asynchronous
+			int qidx;
+			for (qidx = 1; qidx <= nvmev_vdev->nr_cq; qidx++) {
+				struct nvmev_completion_queue *cq = nvmev_vdev->cqes[qidx];
+				if (cq == NULL || !cq->irq_enabled)
+					continue;
+				NVMEV_INFO("IRQ for CQ entry");
+				if (mutex_trylock(&cq->irq_lock)) {
+					if (cq->interrupt_ready == true) {
+						cq->interrupt_ready = false;
+						nvmev_signal_irq(cq->irq_vector);
+					}
+					mutex_unlock(&cq->irq_lock);
+				}
+			}
+
+
+			if(csd_flag == ASYNC){
+				// Insert proc edge command into task queues
+				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+				queue_enqueue(normal_task_queue, proc_edge_struct);
+				NVMEV_INFO("%s: Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu, io_time_span: %llu(us)", 
+					__func__, get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, finished_time / 1000);
+				// NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
+			}
+
+			preempt_enable();
 		}
 		break;
 	default:
