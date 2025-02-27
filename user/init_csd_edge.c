@@ -286,10 +286,10 @@ int init_csds_data(int* fd, void *buffer)
     return 0;
 }
 
-int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *proc_edge_struct) {
+int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *proc_edge_struct, int is_sync) {
     memset(io, 0, sizeof(*io));
     io->opcode = 0x66;  // 0x66 for csd_proc_edge
-    io->apptag = CMD_PROC_EDGE;    // 0 for edge processing
+    io->apptag = is_sync;    // 1 for sync, -1 for async
     io->addr = (unsigned long long)proc_edge_struct;
     return 0;
 }
@@ -301,7 +301,7 @@ long long get_time_ns() {
 }
 
 // Graph processing utility functions
-int send_proc_edge(int r, int c, int csd_id, int iter)
+int send_proc_edge(int r, int c, int csd_id, int iter, int is_sync)
 {
     struct nvme_user_io io;
     int ret;
@@ -316,7 +316,7 @@ int send_proc_edge(int r, int c, int csd_id, int iter)
         .num_csds = num_csds
     };
 
-    setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
+    setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct, is_sync);
     ret = nvme_io_submit(fd[csd_id], &io);
     return ret;
 }
@@ -368,7 +368,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(r, c, csd_id, 0);
+                    ret = send_proc_edge(r, c, csd_id, 0, SYNC);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -403,13 +403,13 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(iter > 0 && c < r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0);
+                        ret = send_proc_edge(r, c, csd_id, 0, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
                         }
                         if(r < c){
-                            ret = send_proc_edge(r, c, csd_id, 1);
+                            ret = send_proc_edge(r, c, csd_id, 1, SYNC);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -421,7 +421,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
 
                 // Diagnonal edge block
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(c, c, csd_id, 1);
+                    ret = send_proc_edge(c, c, csd_id, 1, SYNC);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -435,12 +435,12 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(c >= r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0);
+                        ret = send_proc_edge(r, c, csd_id, 0, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
                         }
-                        ret = send_proc_edge(r, c, csd_id, 1);
+                        ret = send_proc_edge(r, c, csd_id, 1, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -474,14 +474,14 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
     for(int iter = 0; iter < num_iter; iter++)
     {
         // 1. Iter: Sending ioctl command for all edge blocks
-        if(true){
+        if(iter == 0){
             for(int c = 0; c < num_partitions; c++){
                 for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter);
+                        ret = send_proc_edge(r, c, csd_id, iter, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -497,7 +497,7 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter);
+                        ret = send_proc_edge(r, c, csd_id, iter, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -542,6 +542,23 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
     return 0;
 }
 
+void test_sync_async(){
+    int s, e;
+    int total_sync = 0, total_async = 0;
+    for(int i = 0; i < 10; i++){
+        s = get_time_ns();
+        send_proc_edge(0, 0, 0, 0, ASYNC);
+        e = get_time_ns();
+        total_async += e - s;
+        s = get_time_ns();
+        send_proc_edge(0, 0, 0, 0, SYNC);
+        e = get_time_ns();
+        total_sync += e - s;
+    }
+    printf("ASYNC avg.: %d ns\n", total_async);
+    printf("SYNC avg.: %d ns\n", total_sync);
+}
+
 int main() 
 {
     // Allocate buffer
@@ -553,23 +570,24 @@ int main()
     init_csds_data(fd, buffer);
 
     // Open NVMeVirt devices: Non_Blocking
-    // for(int csd_id = 0; csd_id < num_csds; csd_id++){
-    //     fd[csd_id] = open_nvme_device(device[csd_id], 0);
-    //     if (fd[csd_id] < 0) {
-    //         return -1;
-    //     }
-    // }
-
-    // Open NVMeVirt devices: Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id], 1);
+        fd[csd_id] = open_nvme_device(device[csd_id], 0);
         if (fd[csd_id] < 0) {
             return -1;
         }
     }
+
+    // Open NVMeVirt devices: Blocking
+    // for(int csd_id = 0; csd_id < num_csds; csd_id++){
+    //     fd[csd_id] = open_nvme_device(device[csd_id], 1);
+    //     if (fd[csd_id] < 0) {
+    //         return -1;
+    //     }
+    // }
     // csd_proc_edge_loop(buffer, 5);
-    csd_proc_edge_loop_grafu(buffer, 5);
+    // csd_proc_edge_loop_grafu(buffer, 5);
     // csd_proc_edge_loop_normal(buffer, 5);
+    test_sync_async();
     cleanup(buffer);
     
     return 0;

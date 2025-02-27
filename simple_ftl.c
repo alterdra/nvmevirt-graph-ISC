@@ -127,31 +127,26 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				return -EFAULT;
 			}
 
+			// Dispatcher
+			struct PROC_EDGE proc_edge_struct;
+			memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
+			proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
 			
-			int csd_flag = cmd->rw.apptag;
-			if(csd_flag == CMD_PROC_EDGE)
-			{
-				// Dispatcher
-				struct PROC_EDGE proc_edge_struct;
-				memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
-				proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
-				
-				NVMEV_INFO("[CSD %d, %s()] [nvme_cmd_csd_proc_edge]\n", proc_edge_struct.csd_id, __func__);
+			NVMEV_INFO("[CSD %d, %s()] [nvme_cmd_csd_proc_edge]\n", proc_edge_struct.csd_id, __func__);
 
-				// Schedule the I/O, get the target I/O complete time
-				__u64 current_time = __get_wallclock();
-				ret->nsecs_target = __schedule_io_units(
-				cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
-				__u64 finished_time = ret->nsecs_target - current_time;
-				proc_edge_struct.nsecs_target = ret->nsecs_target;
-				
-				// Insert proc edge command into task queues
-				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
-				queue_enqueue(normal_task_queue, proc_edge_struct);
-				NVMEV_INFO("Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu", 
-					get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
-				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
-			}
+			// Schedule the I/O, get the target I/O complete time
+			__u64 current_time = __get_wallclock();
+			ret->nsecs_target = __schedule_io_units(
+			cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
+			__u64 finished_time = ret->nsecs_target - current_time;
+			proc_edge_struct.nsecs_target = ret->nsecs_target;
+			
+			// Insert proc edge command into task queues
+			struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
+			queue_enqueue(normal_task_queue, proc_edge_struct);
+			NVMEV_INFO("Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu", 
+				get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len);
+			NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
 		}
 		break;
 	default:

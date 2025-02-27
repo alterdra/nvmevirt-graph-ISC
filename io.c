@@ -573,7 +573,8 @@ static size_t __nvmev_proc_io(int sqid, int sq_entry, size_t *io_size)
 #endif
 
 	// For graph processing asynchronous ioctl
-	if(cmd->common.opcode == nvme_cmd_csd_process_edge)
+	int csd_flag = cmd->rw.apptag;
+	if(cmd->common.opcode == nvme_cmd_csd_process_edge && csd_flag == ASYNC)
 	{
 		// Fill in the CQ entry
 		NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
@@ -744,8 +745,8 @@ static int nvmev_io_worker(void *data)
 		int qidx;
 
 		// Edge Processing: normal and future queue
-		// __do_perform_edge_proc();
-		__do_perform_edge_proc_grafu();
+		__do_perform_edge_proc();
+		// __do_perform_edge_proc_grafu();
 
 		while (curr != -1) {
 			struct nvmev_io_work *w = &worker->work_queue[curr];

@@ -2,7 +2,8 @@
 #define PROC_EDGE_H
 
 #include <linux/types.h> // For __u64 and __u32 definitions
-#define CMD_PROC_EDGE 0
+#define SYNC 1
+#define ASYNC 2
 
 struct PROC_EDGE 
 {
