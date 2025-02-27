@@ -16,6 +16,7 @@
 
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
+#define PAGE_SIZE 4096
 #define MAX_NUM_CSDS 4
 
 // Virtual devices and file descripters
@@ -32,15 +33,15 @@ const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 
 // Vertex data and aggregation info
 struct hmb_device hmb_dev = {0};
-// Not used after user-kernel shared hmb struct
-int src_vertices_slba;      
-int dst_vertices_slba;
-int fut_vertices_slba;
 
 // Edge Processing;
 int outdegree_slba;
 int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
+
+// Aggregation latency
+const int aggregation_read_time = 10000;
+const int aggregation_write_time = 10000;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path, int blocking) {
@@ -285,33 +286,6 @@ int init_csds_data(int* fd, void *buffer)
     return 0;
 }
 
-int test_edge_block(int* fd, void *buffer, int r, int c, int csd_id)
-{
-    int ret;
-    struct nvme_user_io io;
-    memset(buffer, 0, buffer_size);
-    int offset = 0;
-
-    printf("Edge block %d-%d size at CSD %d: %d\n", r, c, csd_id, edge_blocks_length[r][c][csd_id]);
-    while(offset < edge_blocks_length[r][c][csd_id]){
-        setup_nvme_command(&io, buffer, 0x02, (edge_blocks_slba[r][c][csd_id] + offset) / SECTOR_SIZE);  // Setup read command
-        ret = nvme_io_submit(fd[csd_id], &io);
-        if (ret < 0) {
-            cleanup(buffer);
-            return -1;
-        }
-        int min_val = min(edge_blocks_length[r][c][csd_id] - offset, buffer_size);
-        printf("-----page----------: %d bytes valid\n", min_val);
-        // for(int i = 0; i < min_val; i += edge_size){
-        //     int u = *(int*)(buffer + i);
-        //     int v = *(int*)(buffer + i + vertex_size);
-        //     printf("%d %d\n", u, v);
-        // }
-        offset += buffer_size;
-    }
-    return 0;
-}
-
 int setup_nvme_csd_proc_edge_command(struct nvme_user_io *io, struct PROC_EDGE *proc_edge_struct) {
     memset(io, 0, sizeof(*io));
     io->opcode = 0x66;  // 0x66 for csd_proc_edge
@@ -326,42 +300,209 @@ long long get_time_ns() {
     return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
 }
 
-int csd_proc_edge_loop(int* fd, void *buffer)
+// Graph processing utility functions
+int send_proc_edge(int r, int c, int csd_id, int iter)
 {
     struct nvme_user_io io;
     int ret;
-
-    for(int iter = 0; iter < 1; iter++)
+    struct PROC_EDGE proc_edge_struct = 
     {
-        // 1. Iter: Sending ioctl command for all edge blocks
+        .outdegree_slba = outdegree_slba,
+        .edge_block_slba = edge_blocks_slba[r][c][csd_id],
+        .edge_block_len = edge_blocks_length[r][c][csd_id],
+        .iter = iter,
+        .r = r, .c = c, .csd_id = csd_id,
+        .num_partitions = num_partitions,
+        .num_csds = num_csds
+    };
+
+    setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
+    ret = nvme_io_submit(fd[csd_id], &io);
+    return ret;
+}
+
+void aggr_partition(int c, int csd_id){
+    bool can_aggr = false;
+    do {
+        can_aggr = true;
+        for(int r = 0; r < num_partitions; r++){
+            int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+            if(!hmb_dev.done1.virt_addr[id]){
+                can_aggr = false;
+                break;
+            }
+        }
+    } while(!can_aggr);
+}
+
+void conv_partition(size_t partition_id){
+    // LUMOS's get_partition_range in partition.hpp
+    size_t begin, end;
+    const size_t split_partition = num_vertices % num_partitions;
+    const size_t partition_size = num_vertices / num_partitions + 1;
+    if (partition_id < split_partition) {
+        begin = partition_id * partition_size;
+        end = (partition_id + 1) * partition_size;
+    }
+    else{
+        const size_t split_point = split_partition * partition_size;
+        begin = split_point + (partition_id - split_partition) * (partition_size - 1);
+        end = split_point + (partition_id - split_partition + 1) * (partition_size - 1);
+    }
+
+    // Conv the values, for convergence
+    for(size_t v = begin; v < end; v++)
+        hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+    
+    // Notify CSD that partition c finish aggregation
+    int num_pages = __ceil(begin - end, PAGE_SIZE);
+    int end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
+    while(get_time_ns() < end_time);
+    hmb_dev.done_partition.virt_addr[partition_id] = true;
+}
+
+int csd_proc_edge_loop_normal(void* buffer, int num_iter)
+{
+    int ret;
+    for(int iter = 0; iter < num_iter; iter++){
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    // if(!(r == 5 && c == 1)) continue;
-                    struct PROC_EDGE proc_edge_struct = 
-                    {
-                        .src_vertex_slba = src_vertices_slba,
-                        .outdegree_slba = outdegree_slba,
-                        .edge_block_slba = edge_blocks_slba[r][c][csd_id],
-                        .edge_block_len = edge_blocks_length[r][c][csd_id],
-                        .iter = iter,
-                        .r = r, .c = c, .csd_id = csd_id,
-                        .num_partitions = num_partitions,
-                        .num_csds = num_csds
-                    };
-
-                    // long long start_ns = get_time_ns();
-                    setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct);
-                    ret = nvme_io_submit(fd[csd_id], &io);
-                    if (ret < 0) {
+                    ret = send_proc_edge(r, c, csd_id, 0);
+                    if(ret < 0){
                         cleanup(buffer);
                         return -1;
                     }
-                    // long long end_ns = get_time_ns();
+                }
+            }
+            conv_partition(c);
+        }
+        for(int v = 0; v < num_vertices; v++){
+            hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
+            hmb_dev.buf1.virt_addr[v] = 0;
+        }
+    }
 
-                    // int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                    // printf("IOCTL Just ended: CSD %d: Block-%d-%d: Done: %d\n", csd_id, r, c, hmb_dev.done.virt_addr[id]);
-                    // printf("IOCTL execution time: %lld ns (%lld us, %lld ms), edge_block_size: %d\n\n", end_ns - start_ns, (end_ns - start_ns) / 1000, (end_ns - start_ns) / 1000000, edge_blocks_length[r][c][csd_id]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+
+    hmb_cleanup(&hmb_dev);
+    printf("HMB cleaned up\n");
+    return 0;
+}
+
+int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
+{
+    int ret;
+    
+    for(int iter = 0; iter < num_iter; iter++)
+    {
+        if(iter % 2 == 0){
+            for(int c = 0; c < num_partitions; c++){
+                for(int r = 0; r < num_partitions; r++){
+                    if(iter > 0 && c < r)
+                        continue;
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        ret = send_proc_edge(r, c, csd_id, 0);
+                        if(ret < 0){
+                            cleanup(buffer);
+                            return -1;
+                        }
+                        if(r < c){
+                            ret = send_proc_edge(r, c, csd_id, 1);
+                            if(ret < 0){
+                                cleanup(buffer);
+                                return -1;
+                            }
+                        }
+                    }
+                }
+                conv_partition(c);
+
+                // Diagnonal edge block
+                for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                    ret = send_proc_edge(c, c, csd_id, 1);
+                    if(ret < 0){
+                        cleanup(buffer);
+                        return -1;
+                    }
+                }
+            }
+        }
+        else{
+            for(int c = num_partitions - 1; c >= 0; c--){
+                for(int r = num_partitions - 1; r >= 0; r--){
+                    if(c >= r)
+                        continue;
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        ret = send_proc_edge(r, c, csd_id, 0);
+                        if(ret < 0){
+                            cleanup(buffer);
+                            return -1;
+                        }
+                        ret = send_proc_edge(r, c, csd_id, 1);
+                        if(ret < 0){
+                            cleanup(buffer);
+                            return -1;
+                        }
+                    }
+                }
+                conv_partition(c);
+            }
+        }
+
+        // End of the iter update
+        for(int v = 0; v < num_vertices; v++){
+            hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
+            hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
+            hmb_dev.buf2.virt_addr[v] = 0.0;
+        }
+    }
+
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+
+    hmb_cleanup(&hmb_dev);
+    printf("HMB cleaned up\n");
+    return 0;
+}
+
+int csd_proc_edge_loop(void *buffer, int num_iter)
+{
+    int ret;
+    
+    for(int iter = 0; iter < num_iter; iter++)
+    {
+        // 1. Iter: Sending ioctl command for all edge blocks
+        if(true){
+            for(int c = 0; c < num_partitions; c++){
+                for(int r = 0; r < num_partitions; r++){
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(hmb_dev.done1.virt_addr[id])
+                            continue;
+                        ret = send_proc_edge(r, c, csd_id, iter);
+                        if(ret < 0){
+                            cleanup(buffer);
+                            return -1;
+                        }
+                    }
+                }
+            }
+        }
+        else{
+            for(int c = num_partitions - 1; c >= 0; c--){
+                for(int r = num_partitions - 1; r >= 0; r--){
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(hmb_dev.done1.virt_addr[id])
+                            continue;
+                        ret = send_proc_edge(r, c, csd_id, iter);
+                        if(ret < 0){
+                            cleanup(buffer);
+                            return -1;
+                        }
+                    }
                 }
             }
         }
@@ -369,42 +510,8 @@ int csd_proc_edge_loop(int* fd, void *buffer)
         // 2. Aggregate for each columns
         for(int c = 0; c < num_partitions; c++){
             for(int csd_id = 0; csd_id < num_csds; csd_id++)
-            {
-                // Check a column of edge blocks
-                bool can_aggr = false;
-                do {
-                    can_aggr = true;
-                    for(int r = 0; r < num_partitions; r++){
-                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                        if(!hmb_dev.done1.virt_addr[id]){
-                            can_aggr = false;
-                            break;
-                        }
-                    }
-                } while(!can_aggr);
-            }
-
-            // LUMOS's get_partition_range in partition.hpp
-            size_t begin, end;
-            const size_t split_partition = num_vertices % num_partitions;
-            const size_t partition_size = num_vertices / num_partitions + 1;
-            size_t partition_id = c;
-            if (partition_id < split_partition) {
-                begin = partition_id * partition_size;
-                end = (partition_id + 1) * partition_size;
-            }
-            else{
-                const size_t split_point = split_partition * partition_size;
-                begin = split_point + (partition_id - split_partition) * (partition_size - 1);
-                end = split_point + (partition_id - split_partition + 1) * (partition_size - 1);
-            }
-
-            // Conv the values, for convergence
-            for(size_t v = begin; v < end; v++)
-                hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
-            
-            // Notify CSD that partition c finish aggregation
-            hmb_dev.done_partition.virt_addr[c] = true;
+                aggr_partition(c, csd_id);
+            conv_partition(c);
         }
 
         // 3. End of the iter update
@@ -426,14 +533,9 @@ int csd_proc_edge_loop(int* fd, void *buffer)
             hmb_dev.done_partition.virt_addr[c] = false;
     }
 
-    // Check the first and last 10 vertices
-    // for(int i = 0; i < min(10, num_vertices); i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
     for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
-
-    /* Clean up */
     hmb_cleanup(&hmb_dev);
     printf("HMB cleaned up\n");
     
@@ -448,18 +550,26 @@ int main()
         cleanup(NULL);
         return -1;
     }
-
     init_csds_data(fd, buffer);
-    // test_edge_block(fd, buffer, 5, 1, 0);
 
     // Open NVMeVirt devices: Non_Blocking
+    // for(int csd_id = 0; csd_id < num_csds; csd_id++){
+    //     fd[csd_id] = open_nvme_device(device[csd_id], 0);
+    //     if (fd[csd_id] < 0) {
+    //         return -1;
+    //     }
+    // }
+
+    // Open NVMeVirt devices: Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id], 0);
+        fd[csd_id] = open_nvme_device(device[csd_id], 1);
         if (fd[csd_id] < 0) {
             return -1;
         }
     }
-    csd_proc_edge_loop(fd, buffer);
+    // csd_proc_edge_loop(buffer, 5);
+    csd_proc_edge_loop_grafu(buffer, 5);
+    // csd_proc_edge_loop_normal(buffer, 5);
     cleanup(buffer);
     
     return 0;

@@ -65,8 +65,8 @@ static unsigned long memmap_size = 0;
 // static unsigned int read_time = 1;
 // static unsigned int read_delay = 1;
 // static unsigned int read_trailing = 0;
-static unsigned int read_time = 10000000;
-static unsigned int read_delay = 10000000;
+static unsigned int read_time = 10000;
+static unsigned int read_delay = 10000;
 static unsigned int read_trailing = 0;
 
 static unsigned int write_time = 1;
