@@ -184,8 +184,6 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				__do_perform_edge_proc_grafu(proc_edge_struct);
 			}
 
-			preempt_disable();
-			
 			// Fill in the CQ entry
 			NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
 			struct nvmev_submission_queue *sq = nvmev_vdev->sqes[sqid];
@@ -237,7 +235,6 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				// NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
 			}
 
-			preempt_enable();
 		}
 		break;
 	default:

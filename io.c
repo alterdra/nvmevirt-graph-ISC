@@ -64,6 +64,21 @@ void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
 }
 
+void print_vertex_info(int* outdegree, int u, int v)
+{
+	// Printing the float values in kernel
+	unsigned int i_src, f_src, i_dst, f_dst;
+	get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
+	get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
+	NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
+	NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
+	NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
+}
+
+// void __proc_edge(){
+// 	return;
+// }
+
 void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
@@ -74,62 +89,74 @@ void __do_perform_edge_proc(void)
 
 	while(normal_task_queue->size || future_task_queue->size)
 	{
-		if(normal_task_queue->size)
-		{
-			struct PROC_EDGE task;
-			queue_dequeue(normal_task_queue, &task);
+		struct PROC_EDGE task;
+		bool future_aggr_ready = false;
+		if(get_queue_size(future_task_queue)){
+			get_queue_front(future_task_queue, &task);
+			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];
+		}
 
-			// Process the edges
+		NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Test) %d", task.csd_id, __func__, task.r, task.c, normal_task_queue->size);
+		
+		if(future_aggr_ready)
+		{
+			queue_dequeue(future_task_queue, &task);
 			int* storage = nvmev_vdev->ns[task.nsid].mapped;
 			int* outdegree = storage + task.outdegree_slba / vertex_size;
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
-			// int* dsy_vtx = storage + task.dst_vertex_slba;
 
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u:", task.csd_id, __func__, task.r, task.c);
-			// NVMEV_INFO("edge_slba: %llu, edge_len: %llu, nsid: %d, storage_start: %llu", task.edge_block_slba, task.edge_block_len, task.nsid, storage);
-			
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future)", task.csd_id, __func__, task.r, task.c);
+
+			// Process the edges
 			int u = -1, v = -1;
-			for(; e < e_end; e += edge_size / vertex_size)
-			{	
+			for(; e < e_end; e += edge_size / vertex_size) {	
 				u = *e, v = *(e + 1);
-				
 				// Error handling
 				if(outdegree[u] == 0)
 					NVMEV_INFO("Vertex %d has 0 outdegree\n");
-				
-				// In-kernel floating-point calculation
+				preempt_disable();
+				hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
+				preempt_enable();
+			}
+			
+			// For task.csd_id, Edge task.r, task.c is finished
+			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+			hmb_dev.done2.virt_addr[id] = 1;
+		}
+		if(get_queue_size(normal_task_queue))
+		{
+			queue_dequeue(normal_task_queue, &task);
+
+			int* storage = nvmev_vdev->ns[task.nsid].mapped;
+			int* outdegree = storage + task.outdegree_slba / vertex_size;
+			int* e = storage + task.edge_block_slba / vertex_size;
+			int* e_end = e + task.edge_block_len / vertex_size;
+
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Normal)", task.csd_id, __func__, task.r, task.c);
+
+			// Edge_block I/O blocking. Todo: hrtimer.h
+			long long end_time = ktime_get_ns() + task.nsecs_target;
+			while(ktime_get_ns() < end_time);
+			
+			// Process the edges
+			int u = -1, v = -1;
+			for(; e < e_end; e += edge_size / vertex_size) {	
+				u = *e, v = *(e + 1);
+				// Error handling
+				if(outdegree[u] == 0)
+					NVMEV_INFO("Vertex %d has 0 outdegree\n");
 				preempt_disable();
 				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
 				preempt_enable();
-
-				// Fixed-point calculation
-				// preempt_disable();
-				// fixed_t dst = float_to_fixed(hmb_dev.buf1.virt_addr[v]);
-				// fixed_t src = float_to_fixed(hmb_dev.buf0.virt_addr[u]);
-				// fixed_t outdegree_fixed = int_to_fixed(outdegree[u]);
-				// dst = fixed_add(dst, fixed_div(src, outdegree_fixed));
-				// hmb_dev.buf1.virt_addr[v] = fixed_to_float(dst);
-				// preempt_enable();
-
-				// Printing the float values in kernel
-				// unsigned int i_src, f_src, i_dst, f_dst;
-				// get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
-				// get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
-
-				// NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
-				// NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
-				// NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
 			}
+			
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 			hmb_dev.done1.virt_addr[id] = 1;
-
-			// Edge_block I/O blocking
-			// Todo: hrtimer.h
-			while(ktime_get_ns() < task.nsecs_target){
-				usleep_range(10, 20);
-			}
+			
+			// Insert to future task queue
+			queue_enqueue(future_task_queue, task);
 		}
 	}
 }

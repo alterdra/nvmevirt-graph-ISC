@@ -254,9 +254,7 @@ struct nvmev_dev {
 	// Task Queues (edge blocks)
 	struct queue normal_task_queue;
 	struct queue future_task_queue;
-	// HMB (For Aggregation)
-	u64 normal_hmb_phys_addr;
-	u64 future_hmb_phys_addr;
+
 	// Todo: CSD DRAM
 
 	unsigned int mdts;

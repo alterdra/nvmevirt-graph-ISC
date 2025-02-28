@@ -44,13 +44,9 @@ const int aggregation_read_time = 10000;
 const int aggregation_write_time = 10000;
 
 // Opens the NVMe device and returns file descriptor
-int open_nvme_device(const char *device_path, int blocking) {
+int open_nvme_device(const char *device_path) {
 
-    int fd;
-    if(blocking)
-        fd = open(device_path, O_RDWR);
-    else 
-        fd = open(device_path, O_RDWR | O_NONBLOCK);
+    int fd = open(device_path, O_RDWR);
     if (fd < 0) {
         perror("Failed to open NVMe device");
         return -1;
@@ -172,14 +168,6 @@ int __ceil(int x, int y){
 
 int init_csds_data(int* fd, void *buffer)
 {
-    /* Open NVMeVirt devices: Blocking */
-    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id], 1);
-        if (fd[csd_id] < 0) {
-            return -1;
-        }
-    }
-
     /* Initialize HMB */
     if (hmb_init(&hmb_dev) < 0) {
         fprintf(stderr, "Failed to initialize HMB\n");
@@ -274,14 +262,6 @@ int init_csds_data(int* fd, void *buffer)
         }
     }
     printf("Wrote %d edges to CSDs\n", total_edges_saved);
-
-
-    // Closing the fds (Blocking I/O)
-    for(int i = 0; i < num_csds; i++){
-        if (fd[i] >= 0) {
-            close(fd[i]);
-        }
-    }
 
     return 0;
 }
@@ -467,7 +447,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
     return 0;
 }
 
-int csd_proc_edge_loop(void *buffer, int num_iter)
+int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
 {
     int ret;
     
@@ -512,6 +492,7 @@ int csd_proc_edge_loop(void *buffer, int num_iter)
             for(int csd_id = 0; csd_id < num_csds; csd_id++)
                 aggr_partition(c, csd_id);
             conv_partition(c);
+            // printf("Aggregated column %d\n", c);
         }
 
         // 3. End of the iter update
@@ -567,26 +548,20 @@ int main()
         cleanup(NULL);
         return -1;
     }
-    init_csds_data(fd, buffer);
 
-    // Open NVMeVirt devices: Non_Blocking
+    // Open NVMeVirt devices: Blocking
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        fd[csd_id] = open_nvme_device(device[csd_id], 0);
+        fd[csd_id] = open_nvme_device(device[csd_id]);
         if (fd[csd_id] < 0) {
             return -1;
         }
     }
 
-    // Open NVMeVirt devices: Blocking
-    // for(int csd_id = 0; csd_id < num_csds; csd_id++){
-    //     fd[csd_id] = open_nvme_device(device[csd_id], 1);
-    //     if (fd[csd_id] < 0) {
-    //         return -1;
-    //     }
-    // }
-    csd_proc_edge_loop(buffer, 5);
-    // csd_proc_edge_loop_grafu(buffer, 5);
-    // csd_proc_edge_loop_normal(buffer, 5);
+    int __num_iter = 5;
+    init_csds_data(fd, buffer);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+    // csd_proc_edge_loop_grafu(buffer, __num_iter);
+    // csd_proc_edge_loop_normal(buffer, __num_iter);
     // test_sync_async();
     cleanup(buffer);
     
