@@ -10,13 +10,14 @@ struct PROC_EDGE
     __u64 outdegree_slba;
     __u64 edge_block_slba; 
     __u32 edge_block_len; 
-    __u32 iter;
+    __u32 iter, num_iters;
 
     __u32 nsid;     // Namespace id, used by kernel module
 
     // For aggregation to HMB done buffer
     __u32 r, c, csd_id; 
     __u32 num_partitions, num_csds;
+    __u32 num_vertices;
     __u64 nsecs_target;
 
 } __attribute__((packed));

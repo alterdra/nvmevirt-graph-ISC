@@ -116,8 +116,10 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	NVMEV_INFO("[Grafu CSD %d, %s()]: Processing edge-block-%u-%u, version %d:, io_time: %d", task.csd_id, __func__, task.r, task.c, task.iter, task.nsecs_target);
 	
 	// Edge block read I/O
-	long long end_time = ktime_get_ns() + task.nsecs_target;
-	while(ktime_get_ns() < end_time);
+	if(task.iter == 0){
+		long long end_time = ktime_get_ns() + task.nsecs_target;
+		while(ktime_get_ns() < end_time);
+	}
 	
 	// Process normal values or future values according to iter in the command
 	int u = -1, v = -1;

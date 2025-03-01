@@ -79,6 +79,8 @@ void print_vertex_info(int* outdegree, int u, int v)
 // 	return;
 // }
 
+// void end_of_iter()
+
 void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
@@ -91,12 +93,69 @@ void __do_perform_edge_proc(void)
 	{
 		struct PROC_EDGE task;
 		bool future_aggr_ready = false;
-		if(get_queue_size(future_task_queue)){
+
+		if(get_queue_size(future_task_queue))
+		{
 			get_queue_front(future_task_queue, &task);
+			
+			// End of the iteration update
+			// Here task.iter is a future task, so % 2 condition should be flipped
+			// Fake E_00 for even iter
+			if(task.iter % 2 == 1 && task.r == task.num_partitions - 1
+			|| task.iter % 2 == 0 && task.r == 0)
+			{
+				while(hmb_dev.done_partition.virt_addr[task.r] == false);
+				if(task.iter % 2 == 0 && task.r == 0)
+					queue_dequeue(future_task_queue, &task);
+
+				// All normal task must be done
+				// swap normal queue and future queue
+				queue_swap(normal_task_queue, future_task_queue);
+
+				NVMEV_INFO("CSD %d, %s, Queue sizes: %d, %d", task.csd_id, __func__, get_queue_size(normal_task_queue), get_queue_size(future_task_queue));
+				
+				// v_t+1 <- v_t+2, v_t <- v_t+1
+				// Implemented in shared memory so performed only once
+				// Todo: hmb lock
+				if(task.csd_id == 0){
+
+					int v, c, r, csd_id, i;
+					for(v = 0; v < task.num_vertices; v++){
+						hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
+						hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
+						hmb_dev.buf2.virt_addr[v] = 0.0;
+					}
+					for(c = 0; c < task.num_partitions; c++){
+						for(r = 0; r < task.num_partitions; r++){
+							for(csd_id = 0; csd_id < task.num_csds; csd_id++){
+								int id = csd_id * task.num_partitions * task.num_partitions + r * task.num_partitions + c;
+								hmb_dev.done1.virt_addr[id] = hmb_dev.done2.virt_addr[id];
+								hmb_dev.done2.virt_addr[id] = false;
+							}
+						}
+					}
+					for(c = 0; c < task.num_partitions; c++)
+						hmb_dev.done_partition.virt_addr[c] = false;
+					
+					// For notifying end of iteration update
+					// 1. Notify host
+					hmb_dev.done_partition.virt_addr[task.num_partitions] = true;
+					// 2. Notify all CSDs
+					for(i = 0; i < task.num_csds; i++)
+						hmb_dev.done_partition.virt_addr[task.num_partitions + i + 1]= true;
+				}
+
+				// Force all CSDs to wait for end-of-iter. update
+				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] == false);
+				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = false;
+			}
+			
+
+			// Future task ready
 			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];
 		}
 
-		NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Test) %d", task.csd_id, __func__, task.r, task.c, normal_task_queue->size);
+		// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Test) %d", task.csd_id, __func__, task.r, task.c, normal_task_queue->size);
 		
 		if(future_aggr_ready)
 		{
@@ -106,7 +165,7 @@ void __do_perform_edge_proc(void)
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
 
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future)", task.csd_id, __func__, task.r, task.c);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
 
 			// Process the edges
 			int u = -1, v = -1;
@@ -123,8 +182,14 @@ void __do_perform_edge_proc(void)
 			// For task.csd_id, Edge task.r, task.c is finished
 			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 			hmb_dev.done2.virt_addr[id] = 1;
+
+			// Fake E_00 task: for even iter end of iteration
+			if(task.iter % 2 == 0 && task.r == task.num_partitions && task.c == 0){
+				task.r = task.c = 0;
+				queue_enqueue(future_task_queue, task);
+			}
 		}
-		if(get_queue_size(normal_task_queue))
+		else if(get_queue_size(normal_task_queue))
 		{
 			queue_dequeue(normal_task_queue, &task);
 
@@ -133,7 +198,7 @@ void __do_perform_edge_proc(void)
 			int* e = storage + task.edge_block_slba / vertex_size;
 			int* e_end = e + task.edge_block_len / vertex_size;
 
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Normal)", task.csd_id, __func__, task.r, task.c);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u Normal (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
 
 			// Edge_block I/O blocking. Todo: hrtimer.h
 			long long end_time = ktime_get_ns() + task.nsecs_target;
@@ -156,7 +221,11 @@ void __do_perform_edge_proc(void)
 			hmb_dev.done1.virt_addr[id] = 1;
 			
 			// Insert to future task queue
-			queue_enqueue(future_task_queue, task);
+			if(task.iter != task.num_iters - 1 &&
+			((task.iter % 2 == 0 && task.r <= task.c) || (task.iter % 2 == 1 && task.r > task.c))){
+				task.iter++;
+				queue_enqueue(future_task_queue, task);
+			}
 		}
 	}
 }

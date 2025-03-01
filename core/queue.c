@@ -81,3 +81,28 @@ int get_queue_back(struct queue *q, struct PROC_EDGE* proc_edge_struct) {
     *proc_edge_struct = node->proc_edge_struct;
     return 0; // Success
 }
+
+void queue_swap(struct queue *q1, struct queue *q2) {
+    struct list_head temp_head;
+    int temp_size;
+
+    mutex_lock(&q1->lock);
+    mutex_lock(&q2->lock);
+
+    INIT_LIST_HEAD(&temp_head);  
+
+    // Move q1->head to temp_head and q2->head to q1->head properly
+    list_replace_init(&q1->head, &temp_head);
+    list_replace_init(&q2->head, &q1->head);
+    list_replace_init(&temp_head, &q2->head);
+
+    // Swap sizes
+    temp_size = q1->size;
+    q1->size = q2->size;
+    q2->size = temp_size;
+
+    mutex_unlock(&q1->lock);
+    mutex_unlock(&q2->lock);
+}
+
+// bool queue_exist

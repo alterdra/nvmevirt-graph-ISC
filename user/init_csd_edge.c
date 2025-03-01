@@ -124,6 +124,9 @@ void cleanup(void *buffer)
         }
         free(edge_blocks_length);
     }
+
+    hmb_cleanup(&hmb_dev);
+    printf("HMB cleaned up\n");
 }
 
 long getFileSize(const char *filename) {
@@ -168,13 +171,6 @@ int __ceil(int x, int y){
 
 int init_csds_data(int* fd, void *buffer)
 {
-    /* Initialize HMB */
-    if (hmb_init(&hmb_dev) < 0) {
-        fprintf(stderr, "Failed to initialize HMB\n");
-        return 1;
-    }
-    printf("HMB initialized successfully\n");
-    
     int ret;
     char filename[50];
     struct nvme_user_io io;
@@ -281,7 +277,7 @@ long long get_time_ns() {
 }
 
 // Graph processing utility functions
-int send_proc_edge(int r, int c, int csd_id, int iter, int is_sync)
+int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_sync)
 {
     struct nvme_user_io io;
     int ret;
@@ -291,9 +287,11 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int is_sync)
         .edge_block_slba = edge_blocks_slba[r][c][csd_id],
         .edge_block_len = edge_blocks_length[r][c][csd_id],
         .iter = iter,
+        .num_iters = num_iters,
         .r = r, .c = c, .csd_id = csd_id,
         .num_partitions = num_partitions,
-        .num_csds = num_csds
+        .num_csds = num_csds,
+        .num_vertices = num_vertices,
     };
 
     setup_nvme_csd_proc_edge_command(&io, &proc_edge_struct, is_sync);
@@ -348,7 +346,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(r, c, csd_id, 0, SYNC);
+                    ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -366,8 +364,6 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
     for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
-    hmb_cleanup(&hmb_dev);
-    printf("HMB cleaned up\n");
     return 0;
 }
 
@@ -383,13 +379,13 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(iter > 0 && c < r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
                         }
                         if(r < c){
-                            ret = send_proc_edge(r, c, csd_id, 1, SYNC);
+                            ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -401,7 +397,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
 
                 // Diagnonal edge block
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(c, c, csd_id, 1, SYNC);
+                    ret = send_proc_edge(c, c, csd_id, 1, num_iter, SYNC);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -415,12 +411,12 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(c >= r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
                         }
-                        ret = send_proc_edge(r, c, csd_id, 1, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -442,8 +438,6 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
     for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
-    hmb_cleanup(&hmb_dev);
-    printf("HMB cleaned up\n");
     return 0;
 }
 
@@ -453,15 +447,15 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     
     for(int iter = 0; iter < num_iter; iter++)
     {
-        // 1. Iter: Sending ioctl command for all edge blocks
         if(iter % 2 == 0){
+            // 1. Iter: Sending ioctl command for all edge blocks
             for(int c = 0; c < num_partitions; c++){
                 for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, ASYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -469,15 +463,23 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                     }
                 }
             }
+            // 2. Aggregate for each columns
+            for(int c = 0; c < num_partitions; c++){
+                for(int csd_id = 0; csd_id < num_csds; csd_id++)
+                    aggr_partition(c, csd_id);
+                conv_partition(c);
+                printf("Aggregated column %d\n", c);
+            }
+
         }
         else{
             for(int c = num_partitions - 1; c >= 0; c--){
-                for(int r = num_partitions - 1; r >= 0; r--){
+                for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, ASYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -485,59 +487,52 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                     }
                 }
             }
-        }
-
-        // 2. Aggregate for each columns
-        for(int c = 0; c < num_partitions; c++){
-            for(int csd_id = 0; csd_id < num_csds; csd_id++)
-                aggr_partition(c, csd_id);
-            conv_partition(c);
-            // printf("Aggregated column %d\n", c);
-        }
-
-        // 3. End of the iter update
-        for(int v = 0; v < num_vertices; v++){
-            hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
-            hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
-            hmb_dev.buf2.virt_addr[v] = 0.0;
-        }
-        for(int c = 0; c < num_partitions; c++){
-            for(int r = 0; r < num_partitions; r++){
-                for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                    hmb_dev.done1.virt_addr[id] = hmb_dev.done2.virt_addr[id];
-                    hmb_dev.done2.virt_addr[id] = false;
-                }
+            for(int c = num_partitions - 1; c >= 0; c--){
+                for(int csd_id = 0; csd_id < num_csds; csd_id++)
+                    aggr_partition(c, csd_id);
+                conv_partition(c);
+                printf("Aggregated column %d\n", c);
             }
         }
-        for(int c = 0; c < num_partitions; c++)
-            hmb_dev.done_partition.virt_addr[c] = false;
+        // 3. End of the iter update is performed after last column aggregation in the CSDs
+        // Block waiting for end of the update
+        if(iter != num_iter - 1){
+            while(hmb_dev.done_partition.virt_addr[num_partitions] == false);
+            hmb_dev.done_partition.virt_addr[num_partitions] = false;
+        }
     }
 
     for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
-    hmb_cleanup(&hmb_dev);
-    printf("HMB cleaned up\n");
-    
     return 0;
 }
 
-void test_sync_async(){
+void test_sync_async(void* buffer){
+    int __num_iter = 5;
     int s, e;
-    int total_sync = 0, total_async = 0;
-    for(int i = 0; i < 10; i++){
+    long long total_sync = 0, total_async = 0;
+    for(int i = 0; i < 15; i++){
+        printf("Dual queues");
+        // send_proc_edge(5, 4, 0, 0, __num_iter, ASYNC);
+        init_csds_data(fd, buffer);
         s = get_time_ns();
-        send_proc_edge(5, 4, 0, 0, ASYNC);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter);
         e = get_time_ns();
         total_async += e - s;
-        s = get_time_ns();
-        send_proc_edge(5, 4, 0, 0, SYNC);
-        e = get_time_ns();
-        total_sync += e - s;
     }
-    printf("ASYNC avg.: %d ns\n", total_async);
-    printf("SYNC avg.: %d ns\n", total_sync);
+    // for(int i = 0; i < 15; i++){
+    //     printf("Grafu:");
+    //     init_csds_data(fd, buffer);
+    //     s = get_time_ns();
+    //     csd_proc_edge_loop_grafu(buffer, __num_iter);
+    //     // send_proc_edge(5, 4, 0, 0, __num_iter, SYNC);
+    //     e = get_time_ns();
+
+    //     total_sync += e - s;
+    // }
+    printf("ASYNC avg.: %lld us\n", total_async / 1000);
+    printf("SYNC avg.: %lld ns\n", total_sync / 1000);
 }
 
 int main() 
@@ -557,12 +552,19 @@ int main()
         }
     }
 
+    /* Initialize HMB */
+    if (hmb_init(&hmb_dev) < 0) {
+        fprintf(stderr, "Failed to initialize HMB\n");
+        return 1;
+    }
+    printf("HMB initialized successfully\n");
+
     int __num_iter = 5;
     init_csds_data(fd, buffer);
     csd_proc_edge_loop_dual_queue(buffer, __num_iter);
     // csd_proc_edge_loop_grafu(buffer, __num_iter);
     // csd_proc_edge_loop_normal(buffer, __num_iter);
-    // test_sync_async();
+    // test_sync_async(buffer);
     cleanup(buffer);
     
     return 0;

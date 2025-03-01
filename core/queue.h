@@ -29,5 +29,6 @@ void queue_destroy(struct queue *q);
 int get_queue_size(struct queue *q);
 int get_queue_front(struct queue *q, struct PROC_EDGE* proc_edge_struct);
 int get_queue_back(struct queue *q, struct PROC_EDGE* proc_edge_struct);
+void queue_swap(struct queue *q1, struct queue *q2);
 
 #endif // QUEUE_H
