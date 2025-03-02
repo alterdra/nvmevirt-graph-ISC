@@ -106,3 +106,16 @@ void queue_swap(struct queue *q1, struct queue *q2) {
 }
 
 // bool queue_exist
+bool queue_find(struct queue *q, struct PROC_EDGE task) {
+    struct queue_node *node;
+    mutex_lock(&q->lock);
+    list_for_each_entry(node, &q->head, list) {
+        if (node->proc_edge_struct.r == task.r &&
+            node->proc_edge_struct.c == task.c) {
+            mutex_unlock(&q->lock);
+            return true;
+        }
+    }
+    mutex_unlock(&q->lock);
+    return NULL;
+}

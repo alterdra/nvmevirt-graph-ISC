@@ -28,6 +28,7 @@ struct hmb_device {
     struct hmb_buffer buf2;  /* Third 256MB buffer (v_t+2)*/
     struct hmb_bitmap_buffer done1, done2;  /* Aggregation from CSDs: num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
     struct hmb_bitmap_buffer done_partition;    /* Aggregation done to notify CSDs*/
+    spinlock_t lock;
 };
 
 /* mmap operation for user space mapping */

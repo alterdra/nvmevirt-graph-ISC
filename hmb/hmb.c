@@ -76,7 +76,7 @@ int hmb_mmap(struct file *file, struct vm_area_struct *vma)
     if(buf != NULL){
         if (size > buf->size)
             return -EINVAL;
-        pr_info("HMB: gg float");
+        // pr_info("HMB: gg float");
         return remap_pfn_range(vma, 
                             vma->vm_start,
                             buf->phys_addr >> PAGE_SHIFT,
@@ -86,7 +86,7 @@ int hmb_mmap(struct file *file, struct vm_area_struct *vma)
     else if(done != NULL){
         if (size > done->size)
             return -EINVAL;
-        pr_info("HMB: gg boolean");
+        // pr_info("HMB: gg boolean");
         return remap_pfn_range(vma, 
                             vma->vm_start,
                             done->phys_addr >> PAGE_SHIFT,

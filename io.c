@@ -64,15 +64,13 @@ void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
 }
 
-void print_vertex_info(int* outdegree, int u, int v)
+void print_vertex_info(int csd_id, int* outdegree, int u, int v)
 {
 	// Printing the float values in kernel
 	unsigned int i_src, f_src, i_dst, f_dst;
 	get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
 	get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
-	NVMEV_INFO("src_vtx[%d]: %u.%06u", u, i_src, f_src);
-	NVMEV_INFO("outdegree[%d]: %d", u, outdegree[u]);
-	NVMEV_INFO("dst_vtx[%d]: %u.%06u\n", v, i_dst, f_dst);	
+	NVMEV_INFO("[CSD %d] src_vtx[%d]: %u.%06u, outdegree[%d]: %d, dst_vtx[%d]: %u.%06u\n", csd_id, u, i_src, f_src, u, outdegree[u], v, i_dst, f_dst);
 }
 
 // void __proc_edge(){
@@ -89,7 +87,7 @@ void __do_perform_edge_proc(void)
 	const int vertex_size = 4;
 	const int edge_size = 8;    //Unweighted
 
-	while(normal_task_queue->size || future_task_queue->size)
+	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
 		struct PROC_EDGE task;
 		bool future_aggr_ready = false;
@@ -99,65 +97,32 @@ void __do_perform_edge_proc(void)
 			get_queue_front(future_task_queue, &task);
 			
 			// End of the iteration update
-			// Here task.iter is a future task, so % 2 condition should be flipped
-			// Fake E_00 for even iter
-			if(task.iter % 2 == 1 && task.r == task.num_partitions - 1
-			|| task.iter % 2 == 0 && task.r == 0)
+			// Fake task for even and last iter
+			if(task.iter == task.num_iters
+			|| (task.iter - 1) % 2 == 0 && task.r == task.num_partitions - 1
+			|| (task.iter - 1) % 2 == 1 && task.r == 0)
 			{
-				while(hmb_dev.done_partition.virt_addr[task.r] == false);
-				if(task.iter % 2 == 0 && task.r == 0)
+				// Waiting for last column aggregation end
+				while(!hmb_dev.done_partition.virt_addr[task.r]);
+				if(task.iter == task.num_iters || task.iter % 2 == 0 && task.r == 0)
 					queue_dequeue(future_task_queue, &task);
 
-				// All normal task must be done
-				// swap normal queue and future queue
+				// All normal task must be done --> swap normal queue and future queue
 				queue_swap(normal_task_queue, future_task_queue);
-
-				NVMEV_INFO("CSD %d, %s, Queue sizes: %d, %d", task.csd_id, __func__, get_queue_size(normal_task_queue), get_queue_size(future_task_queue));
+				NVMEV_INFO("CSD %d, %s, Swap queues, Queue sizes: %d, %d", task.csd_id, __func__, get_queue_size(normal_task_queue), get_queue_size(future_task_queue));
 				
-				// v_t+1 <- v_t+2, v_t <- v_t+1
-				// Implemented in shared memory so performed only once
-				// Todo: hmb lock
-				if(task.csd_id == 0){
-
-					int v, c, r, csd_id, i;
-					for(v = 0; v < task.num_vertices; v++){
-						hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
-						hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
-						hmb_dev.buf2.virt_addr[v] = 0.0;
-					}
-					for(c = 0; c < task.num_partitions; c++){
-						for(r = 0; r < task.num_partitions; r++){
-							for(csd_id = 0; csd_id < task.num_csds; csd_id++){
-								int id = csd_id * task.num_partitions * task.num_partitions + r * task.num_partitions + c;
-								hmb_dev.done1.virt_addr[id] = hmb_dev.done2.virt_addr[id];
-								hmb_dev.done2.virt_addr[id] = false;
-							}
-						}
-					}
-					for(c = 0; c < task.num_partitions; c++)
-						hmb_dev.done_partition.virt_addr[c] = false;
-					
-					// For notifying end of iteration update
-					// 1. Notify host
-					hmb_dev.done_partition.virt_addr[task.num_partitions] = true;
-					// 2. Notify all CSDs
-					for(i = 0; i < task.num_csds; i++)
-						hmb_dev.done_partition.virt_addr[task.num_partitions + i + 1]= true;
-				}
-
-				// Force all CSDs to wait for end-of-iter. update
-				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] == false);
-				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = false;
+				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
+				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
+				// Waiting for end-of-iter update done
+				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]);
 			}
-			
-
 			// Future task ready
 			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];
 		}
 
 		// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Test) %d", task.csd_id, __func__, task.r, task.c, normal_task_queue->size);
 		
-		if(future_aggr_ready)
+		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			queue_dequeue(future_task_queue, &task);
 			int* storage = nvmev_vdev->ns[task.nsid].mapped;
@@ -174,9 +139,14 @@ void __do_perform_edge_proc(void)
 				// Error handling
 				if(outdegree[u] == 0)
 					NVMEV_INFO("Vertex %d has 0 outdegree\n");
-				preempt_disable();
+
+				unsigned long flags;
+				spin_lock_irqsave(&hmb_dev.lock, flags);
 				hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
-				preempt_enable();
+				spin_unlock_irqrestore(&hmb_dev.lock, flags);
+
+				if(v == task.num_vertices - 9)
+					print_vertex_info(task.csd_id, outdegree, u, v);
 			}
 			
 			// For task.csd_id, Edge task.r, task.c is finished
@@ -184,7 +154,7 @@ void __do_perform_edge_proc(void)
 			hmb_dev.done2.virt_addr[id] = 1;
 
 			// Fake E_00 task: for even iter end of iteration
-			if(task.iter % 2 == 0 && task.r == task.num_partitions && task.c == 0){
+			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
 				task.r = task.c = 0;
 				queue_enqueue(future_task_queue, task);
 			}
@@ -211,9 +181,14 @@ void __do_perform_edge_proc(void)
 				// Error handling
 				if(outdegree[u] == 0)
 					NVMEV_INFO("Vertex %d has 0 outdegree\n");
-				preempt_disable();
+
+				unsigned long flags;
+				spin_lock_irqsave(&hmb_dev.lock, flags);
 				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
-				preempt_enable();
+				spin_unlock_irqrestore(&hmb_dev.lock, flags);
+
+				if(v == task.num_vertices - 9)
+					print_vertex_info(task.csd_id, outdegree, u, v);
 			}
 			
 			// For task.csd_id, Edge task.r, task.c is finished
@@ -225,6 +200,22 @@ void __do_perform_edge_proc(void)
 			((task.iter % 2 == 0 && task.r <= task.c) || (task.iter % 2 == 1 && task.r > task.c))){
 				task.iter++;
 				queue_enqueue(future_task_queue, task);
+			}
+
+			// Fake E_00 task: for last iter end of iteration
+			if(task.iter == task.num_iters - 1){
+				// To wait for the aggregation of P[num_partitions - 1]
+				if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == task.num_partitions - 1){
+					task.r = task.c = task.num_partitions - 1;
+					task.iter++;
+					queue_enqueue(future_task_queue, task);
+				}
+				// To wait for the aggregation of P[0]
+				else if(task.iter % 2 == 1 && task.r == task.num_partitions - 1 && task.c == 0){
+					task.r = task.c = 0;
+					task.iter++;
+					queue_enqueue(future_task_queue, task);
+				}
 			}
 		}
 	}

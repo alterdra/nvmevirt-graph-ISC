@@ -181,6 +181,17 @@ int init_csds_data(int* fd, void *buffer)
         hmb_dev.buf1.virt_addr[i] = 0.0f;
         hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
+    for(int c = 0; c < num_partitions; c++){
+        for(int r = 0; r < num_partitions; r++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                hmb_dev.done1.virt_addr[id] = false;
+                hmb_dev.done2.virt_addr[id] = false;
+            }
+        }
+    }
+    for(int c = 0; c < num_partitions; c++)
+        hmb_dev.done_partition.virt_addr[c] = false;
 
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
     outdegree_slba = 0;
@@ -313,6 +324,19 @@ void aggr_partition(int c, int csd_id){
     } while(!can_aggr);
 }
 
+void end_of_iter_waiting(){
+    bool can_end_of_iter_update = false;
+    do {
+        can_end_of_iter_update = true;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            if(!hmb_dev.done_partition.virt_addr[num_partitions + csd_id + 1]){
+                can_end_of_iter_update = false;
+                break;
+            }
+        }
+    } while(!can_end_of_iter_update);
+}
+
 void conv_partition(size_t partition_id){
     // LUMOS's get_partition_range in partition.hpp
     size_t begin, end;
@@ -359,10 +383,11 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
             hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
             hmb_dev.buf1.virt_addr[v] = 0;
         }
+        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -433,10 +458,12 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
             hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
             hmb_dev.buf2.virt_addr[v] = 0.0;
         }
+
+        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -468,7 +495,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                 for(int csd_id = 0; csd_id < num_csds; csd_id++)
                     aggr_partition(c, csd_id);
                 conv_partition(c);
-                printf("Aggregated column %d\n", c);
+                // printf("Aggregated column %d\n", c);
+                // printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
             }
 
         }
@@ -491,19 +519,40 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                 for(int csd_id = 0; csd_id < num_csds; csd_id++)
                     aggr_partition(c, csd_id);
                 conv_partition(c);
-                printf("Aggregated column %d\n", c);
+                // printf("Aggregated column %d\n", c);
+                // printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
             }
         }
-        // 3. End of the iter update is performed after last column aggregation in the CSDs
-        // Block waiting for end of the update
-        if(iter != num_iter - 1){
-            while(hmb_dev.done_partition.virt_addr[num_partitions] == false);
-            hmb_dev.done_partition.virt_addr[num_partitions] = false;
+        // 3. End of the iter update
+        // Performed after last column aggregation end (e.g. Ensuring CSD are notified)
+        end_of_iter_waiting();
+        for(int v = 0; v < num_vertices; v++){
+            hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
+            hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
+            hmb_dev.buf2.virt_addr[v] = 0.0;
         }
+        for(int c = 0; c < num_partitions; c++){
+            for(int r = 0; r < num_partitions; r++){
+                for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                    int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                    hmb_dev.done1.virt_addr[id] = hmb_dev.done2.virt_addr[id];
+                    hmb_dev.done2.virt_addr[id] = false;
+                }
+            }
+        }
+        for(int c = 0; c < num_partitions; c++)
+            hmb_dev.done_partition.virt_addr[c] = false;
+
+        // Notify end of iteration done in CSDs
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            hmb_dev.done_partition.virt_addr[num_partitions + csd_id + 1] = false;
+        }
+
+        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -537,6 +586,7 @@ void test_sync_async(void* buffer){
 
 int main() 
 {
+    int __num_iter = 20;
     // Allocate buffer
     void *buffer = allocate_dma_buffer(buffer_size);
     if (!buffer) {
@@ -559,11 +609,20 @@ int main()
     }
     printf("HMB initialized successfully\n");
 
-    int __num_iter = 5;
+    printf("Num iter: %d\n", __num_iter);
+
+    printf("Grafu-----------");
+    init_csds_data(fd, buffer);
+    csd_proc_edge_loop_grafu(buffer, __num_iter);
+    
+    printf("Normal-----------");
+    init_csds_data(fd, buffer);
+    csd_proc_edge_loop_normal(buffer, __num_iter);
+
+    printf("DQ--------------");
     init_csds_data(fd, buffer);
     csd_proc_edge_loop_dual_queue(buffer, __num_iter);
-    // csd_proc_edge_loop_grafu(buffer, __num_iter);
-    // csd_proc_edge_loop_normal(buffer, __num_iter);
+
     // test_sync_async(buffer);
     cleanup(buffer);
     
