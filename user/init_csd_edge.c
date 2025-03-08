@@ -17,12 +17,12 @@
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
 #define PAGE_SIZE 4096
-#define MAX_NUM_CSDS 4
+#define MAX_NUM_CSDS 8
 
 // Virtual devices and file descripters
-const int num_csds = 2;
-const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1"};
-int fd[2] = {0};
+int num_csds;
+const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme0n2", "/dev/nvme1n3"};
+int fd[8] = {0};
 
 // Graph Dataset: Ex, LiveJournal
 const int num_partitions = 8;
@@ -40,8 +40,8 @@ int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Aggregation latency
-const int aggregation_read_time = 10000;
-const int aggregation_write_time = 10000;
+const long long aggregation_read_time = 0;
+const long long aggregation_write_time = 0;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -357,8 +357,9 @@ void conv_partition(size_t partition_id){
         hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
     
     // Notify CSD that partition c finish aggregation
-    int num_pages = __ceil(begin - end, PAGE_SIZE);
-    int end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
+    long long num_pages = __ceil(end - begin, PAGE_SIZE);
+    long long end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
+    // printf("Aggregation time span: %lld\n", num_pages * (aggregation_read_time + aggregation_write_time));
     while(get_time_ns() < end_time);
     hmb_dev.done_partition.virt_addr[partition_id] = true;
 }
@@ -383,7 +384,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
             hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
             hmb_dev.buf1.virt_addr[v] = 0;
         }
-        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
+        // printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
     // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
@@ -459,11 +460,11 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
             hmb_dev.buf2.virt_addr[v] = 0.0;
         }
 
-        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
+        // printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
-    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -548,11 +549,11 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
             hmb_dev.done_partition.virt_addr[num_partitions + csd_id + 1] = false;
         }
 
-        printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
+        // printf("Vertex[%d]: %f\n", num_vertices - 9, hmb_dev.buf0.virt_addr[num_vertices - 9]);
     }
 
-    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -584,9 +585,16 @@ void test_sync_async(void* buffer){
     printf("SYNC avg.: %lld ns\n", total_sync / 1000);
 }
 
-int main() 
+int main(int argc, char* argv[]) 
 {
-    int __num_iter = 20;
+    if (argc<3) {
+		fprintf(stderr, "usage: ./init_csd_edge [num_csds] [num_iters]]\n");
+		exit(-1);
+	}
+    num_csds = atoi(argv[1]);
+    int __num_iter = atoi(argv[2]);
+    
+    
     // Allocate buffer
     void *buffer = allocate_dma_buffer(buffer_size);
     if (!buffer) {
@@ -611,17 +619,27 @@ int main()
 
     printf("Num iter: %d\n", __num_iter);
 
+    long long s, e;
     printf("Grafu-----------");
     init_csds_data(fd, buffer);
+    s = get_time_ns();
     csd_proc_edge_loop_grafu(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
     
     printf("Normal-----------");
     init_csds_data(fd, buffer);
+    s = get_time_ns();
     csd_proc_edge_loop_normal(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
 
     printf("DQ--------------");
     init_csds_data(fd, buffer);
+    s = get_time_ns();
     csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
 
     // test_sync_async(buffer);
     cleanup(buffer);

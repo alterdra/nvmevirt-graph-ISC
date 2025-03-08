@@ -58,24 +58,51 @@ static inline size_t __cmd_io_size(struct nvme_rw_command *cmd)
 	return (cmd->length + 1) << LBA_BITS;
 }
 
+// Printing the float values in kernel
 void get_integer_and_fraction(float x, int* integer_part, int* fraction_part)
 {
-	*integer_part = (int)x; // Extract integer part
-	*fraction_part   = (int)((x - *integer_part) * 1000000); // Extract fractional part
+	*integer_part = (int)x;
+	*fraction_part   = (int)((x - *integer_part) * 1000000);
 }
 
 void print_vertex_info(int csd_id, int* outdegree, int u, int v)
 {
-	// Printing the float values in kernel
 	unsigned int i_src, f_src, i_dst, f_dst;
 	get_integer_and_fraction(hmb_dev.buf0.virt_addr[u], &i_src, &f_src);
 	get_integer_and_fraction(hmb_dev.buf1.virt_addr[v], &i_dst, &f_dst);
 	NVMEV_INFO("[CSD %d] src_vtx[%d]: %u.%06u, outdegree[%d]: %d, dst_vtx[%d]: %u.%06u\n", csd_id, u, i_src, f_src, u, outdegree[u], v, i_dst, f_dst);
 }
 
-// void __proc_edge(){
-// 	return;
-// }
+void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
+
+	const int vertex_size = 4;
+	const int edge_size = 8; 
+
+	int* storage = nvmev_vdev->ns[task.nsid].mapped;
+	int* outdegree = storage + task.outdegree_slba / vertex_size;
+	int* e = storage + task.edge_block_slba / vertex_size;
+	int* e_end = e + task.edge_block_len / vertex_size;
+
+	NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
+
+	// Process the edges
+	int u = -1, v = -1;
+	for(; e < e_end; e += edge_size / vertex_size) {	
+		u = *e, v = *(e + 1);
+		// Error handling
+		if(outdegree[u] == 0)
+			NVMEV_INFO("Vertex %d has 0 outdegree\n");
+
+		unsigned long flags;
+		// spin_lock_irqsave(&hmb_dev.lock, flags);
+		dst[v] += src[u] / outdegree[u];
+		// spin_unlock_irqrestore(&hmb_dev.lock, flags);
+	}
+	
+	// For task.csd_id, Edge task.r, task.c is finished
+	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+	done[id] = 1;
+}
 
 // void end_of_iter()
 
@@ -83,9 +110,6 @@ void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 	struct queue *future_task_queue = &(nvmev_vdev->future_task_queue);
-
-	const int vertex_size = 4;
-	const int edge_size = 8;    //Unweighted
 
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
@@ -113,45 +137,16 @@ void __do_perform_edge_proc(void)
 				
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
-				// Waiting for end-of-iter update done
 				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]);
 			}
 			// Future task ready
 			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];
 		}
-
-		// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Test) %d", task.csd_id, __func__, task.r, task.c, normal_task_queue->size);
 		
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			queue_dequeue(future_task_queue, &task);
-			int* storage = nvmev_vdev->ns[task.nsid].mapped;
-			int* outdegree = storage + task.outdegree_slba / vertex_size;
-			int* e = storage + task.edge_block_slba / vertex_size;
-			int* e_end = e + task.edge_block_len / vertex_size;
-
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
-
-			// Process the edges
-			int u = -1, v = -1;
-			for(; e < e_end; e += edge_size / vertex_size) {	
-				u = *e, v = *(e + 1);
-				// Error handling
-				if(outdegree[u] == 0)
-					NVMEV_INFO("Vertex %d has 0 outdegree\n");
-
-				unsigned long flags;
-				spin_lock_irqsave(&hmb_dev.lock, flags);
-				hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
-				spin_unlock_irqrestore(&hmb_dev.lock, flags);
-
-				if(v == task.num_vertices - 9)
-					print_vertex_info(task.csd_id, outdegree, u, v);
-			}
-			
-			// For task.csd_id, Edge task.r, task.c is finished
-			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
-			hmb_dev.done2.virt_addr[id] = 1;
+			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 
 			// Fake E_00 task: for even iter end of iteration
 			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
@@ -163,37 +158,13 @@ void __do_perform_edge_proc(void)
 		{
 			queue_dequeue(normal_task_queue, &task);
 
-			int* storage = nvmev_vdev->ns[task.nsid].mapped;
-			int* outdegree = storage + task.outdegree_slba / vertex_size;
-			int* e = storage + task.edge_block_slba / vertex_size;
-			int* e_end = e + task.edge_block_len / vertex_size;
-
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u Normal (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
-
 			// Edge_block I/O blocking. Todo: hrtimer.h
 			long long end_time = ktime_get_ns() + task.nsecs_target;
-			while(ktime_get_ns() < end_time);
-			
-			// Process the edges
-			int u = -1, v = -1;
-			for(; e < e_end; e += edge_size / vertex_size) {	
-				u = *e, v = *(e + 1);
-				// Error handling
-				if(outdegree[u] == 0)
-					NVMEV_INFO("Vertex %d has 0 outdegree\n");
-
-				unsigned long flags;
-				spin_lock_irqsave(&hmb_dev.lock, flags);
-				hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
-				spin_unlock_irqrestore(&hmb_dev.lock, flags);
-
-				if(v == task.num_vertices - 9)
-					print_vertex_info(task.csd_id, outdegree, u, v);
+			while(ktime_get_ns() < end_time){
+				usleep_range(10, 20);
 			}
-			
-			// For task.csd_id, Edge task.r, task.c is finished
-			int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
-			hmb_dev.done1.virt_addr[id] = 1;
+
+			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
 			
 			// Insert to future task queue
 			if(task.iter != task.num_iters - 1 &&

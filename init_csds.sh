@@ -12,8 +12,11 @@ fi
 
 make clean
 
+number_of_CSDs=$1
+echo "Number of CSDs: ${number_of_CSDs}"
+
 # Loop for IDs 0 and 1
-for ID in 0 1; do
+for ID in `seq 0 $((number_of_CSDs - 1))`; do
     echo "Building nvmev${ID}..."
     make ID=$ID || exit
 

@@ -118,19 +118,22 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	// Edge block read I/O
 	if(task.iter == 0){
 		long long end_time = ktime_get_ns() + task.nsecs_target;
-		while(ktime_get_ns() < end_time);
+		while(ktime_get_ns() < end_time){
+			usleep_range(10, 20);
+		}
 	}
 	
 	// Process normal values or future values according to iter in the command
 	int u = -1, v = -1;
 	for(; e < e_end; e += edge_size / vertex_size) {	
 		u = *e, v = *(e + 1);
-		preempt_disable();
-		if(task.iter == 0)
+		unsigned long flags;
+		if(task.iter == 0){
 			hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
-		else
+		}
+		else{
 			hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
-		preempt_enable();
+		}
 	}
 }
 
