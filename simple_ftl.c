@@ -135,6 +135,12 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 			hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
 		}
 	}
+
+	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+	if(task.iter == 0)
+		hmb_dev.done1.virt_addr[id] = true;
+	else
+		hmb_dev.done2.virt_addr[id] = true;
 }
 
 bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
@@ -182,13 +188,6 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 			__u64 finished_time = ret->nsecs_target - current_time;
 			proc_edge_struct.nsecs_target = finished_time;
 			
-			// Synchronously process the edge processing command
-			int csd_flag = cmd->rw.apptag;
-			if(csd_flag == SYNC){
-				NVMEV_INFO("io_finished_time: %llu(ns), io_time_span: %llu(us)\n", ret->nsecs_target, finished_time / 1000);
-				__do_perform_edge_proc_grafu(proc_edge_struct);
-			}
-
 			// Fill in the CQ entry
 			// NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
 			struct nvmev_submission_queue *sq = nvmev_vdev->sqes[sqid];
@@ -230,16 +229,18 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				}
 			}
 
-			if(csd_flag == ASYNC){
-				// Insert proc edge command into task queues
-				// In case of duplicate task (aggregation for future task not done)
+			// Synchronously process the edge processing command
+			int csd_flag = cmd->rw.apptag;
+			if(csd_flag == SYNC){
+				__do_perform_edge_proc_grafu(proc_edge_struct);
+			}
+			else if(csd_flag == ASYNC){
+				// Insert proc edge command into task queues; in case of duplicate task (aggregation for future task not done)
 				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 				if(!queue_find(normal_task_queue, proc_edge_struct))
 					queue_enqueue(normal_task_queue, proc_edge_struct);
-				// NVMEV_INFO("%s: Enqueue Normal_task_queue: Queue size: %d, edge_slba: %llu, edge_len: %llu, io_time_span: %llu(us)", 
-				// 	__func__, get_queue_size(normal_task_queue), proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, finished_time / 1000);
-				NVMEV_INFO("%s: Enqueue Normal_task_queue: Queue size: %d, Edge-%u-%u, io_time_span: %llu(us)", 
-					__func__, get_queue_size(normal_task_queue), proc_edge_struct.r, proc_edge_struct.c, finished_time / 1000);
+				// NVMEV_INFO("%s: Enqueue Normal_task_queue: Queue size: %d, Edge-%u-%u, io_time_span: %llu(us)", 
+				// 	__func__, get_queue_size(normal_task_queue), proc_edge_struct.r, proc_edge_struct.c, finished_time / 1000);
 			}
 
 		}

@@ -34,6 +34,9 @@ for ID in `seq 0 $((number_of_CSDs - 1))`; do
         1)
             sudo insmod nvmev1.ko memmap_start=10G memmap_size=1G cpus=3,4
             ;;
+        2)
+            sudo insmod nvmev2.ko memmap_start=11G memmap_size=1G cpus=5,6
+            ;;
     esac
 done
 
