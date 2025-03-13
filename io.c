@@ -167,7 +167,7 @@ void __do_perform_edge_proc(void)
 		{
 			queue_dequeue(normal_task_queue, &task);
 
-			// Edge_block I/O blocking. Todo: hrtimer.h
+			// Edge_block I/O blocking
 			long long end_time = ktime_get_ns() + task.nsecs_target;
 			while(ktime_get_ns() < end_time){
 				usleep_range(10, 20);
@@ -197,6 +197,8 @@ void __do_perform_edge_proc(void)
 					queue_enqueue(future_task_queue, task);
 				}
 			}
+
+			// CSD DRAM update
 		}
 	}
 }
