@@ -77,6 +77,8 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
 
 	const int vertex_size = 4;
 	const int edge_size = 8; 
+	int csd_id = task.csd_id;
+	int num_vertices = task.num_vertices;
 
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
 	int* outdegree = storage + task.outdegree_slba / vertex_size;
@@ -92,11 +94,8 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
 		// Error handling
 		if(outdegree[u] == 0)
 			NVMEV_INFO("Vertex %d has 0 outdegree\n");
-
-		unsigned long flags;
-		// spin_lock_irqsave(&hmb_dev.lock, flags);
-		dst[v] += src[u] / outdegree[u];
-		// spin_unlock_irqrestore(&hmb_dev.lock, flags);
+		// Write to CSD corresponding HMB position
+		dst[v + (long long)(csd_id + 1)* num_vertices] += src[u] / outdegree[u];
 	}
 	
 	// For task.csd_id, Edge task.r, task.c is finished
@@ -138,6 +137,16 @@ void __do_perform_edge_proc(void)
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
 				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]);
+
+				// End of iter vertices value update
+				int csd_id = task.csd_id;
+				int num_vertices = task.num_vertices;
+				long long offset = (task.csd_id + 1) * task.num_vertices;
+				int v;
+				for(v = 0; v < num_vertices; v++){
+				    hmb_dev.buf1.virt_addr[v + offset] = hmb_dev.buf2.virt_addr[v + offset];
+				    hmb_dev.buf2.virt_addr[v + offset] = 0.0;
+				}
 			}
 			// Future task ready
 			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];

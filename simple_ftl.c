@@ -107,6 +107,8 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 {
 	const int vertex_size = 4;
 	const int edge_size = 8;    //Unweighted
+	int csd_id = task.csd_id;
+	int num_vertices = task.num_vertices;
 
 	// Initialize the edge starting addresses
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
@@ -129,10 +131,10 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		u = *e, v = *(e + 1);
 		unsigned long flags;
 		if(task.iter == 0){
-			hmb_dev.buf1.virt_addr[v] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
+			hmb_dev.buf1.virt_addr[v + (long long)(csd_id + 1) * num_vertices] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
 		}
 		else{
-			hmb_dev.buf2.virt_addr[v] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
+			hmb_dev.buf2.virt_addr[v + (long long)(csd_id + 1) * num_vertices] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
 		}
 	}
 

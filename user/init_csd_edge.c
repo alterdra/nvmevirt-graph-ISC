@@ -176,11 +176,15 @@ int init_csds_data(int* fd, void *buffer)
     struct nvme_user_io io;
 
     // Initialize all v_t values
-    for(int i = 0; i < num_vertices; i++){
-        hmb_dev.buf0.virt_addr[i] = 1.0;
+    for(int i = 0; i < num_vertices * (num_csds + 1); i++){
+        hmb_dev.buf0.virt_addr[i] = 0.0f;
         hmb_dev.buf1.virt_addr[i] = 0.0f;
         hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
+    for(int i = 0; i < num_vertices; i++){
+        hmb_dev.buf0.virt_addr[i] = 1.0;
+    }
+
     for(int c = 0; c < num_partitions; c++){
         for(int r = 0; r < num_partitions; r++){
             for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -310,6 +314,21 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_syn
     return ret;
 }
 
+void get_partition_range(size_t partition_id, size_t *begin, size_t *end){
+    // LUMOS's get_partition_range in partition.hpp
+    const size_t split_partition = num_vertices % num_partitions;
+    const size_t partition_size = num_vertices / num_partitions + 1;
+    if (partition_id < split_partition) {
+        *begin = partition_id * partition_size;
+        *end = (partition_id + 1) * partition_size;
+    }
+    else{
+        const size_t split_point = split_partition * partition_size;
+        *begin = split_point + (partition_id - split_partition) * (partition_size - 1);
+        *end = split_point + (partition_id - split_partition + 1) * (partition_size - 1);
+    }
+}
+
 void aggr_partition(int c){
     for(int r = 0; r < num_partitions; r++){
         for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -331,6 +350,30 @@ void aggr_edge_block(int r, int c, bool is_normal){
     }
 }
 
+void conv_partition(size_t partition_id){
+    size_t begin, end;
+    get_partition_range(partition_id, &begin, &end);
+
+    // Add up vertex values to Host DRAM
+    for(size_t v = begin; v < end; v++){
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            hmb_dev.buf1.virt_addr[v] += hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices];
+            hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+        }
+    }
+
+    // Conv the values, for convergence
+    for(size_t v = begin; v < end; v++)
+        hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+    
+    // Notify CSD that partition c finish aggregation
+    long long num_pages = __ceil(end - begin, PAGE_SIZE);
+    long long end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
+    // printf("Aggregation time span: %lld\n", num_pages * (aggregation_read_time + aggregation_write_time));
+    while(get_time_ns() < end_time);
+    hmb_dev.done_partition.virt_addr[partition_id] = true;
+}
+
 void end_of_iter_waiting(){
     bool can_end_of_iter_update = false;
     do {
@@ -346,11 +389,13 @@ void end_of_iter_waiting(){
 
 void end_of_iter_replacing()
 {
+    // Vertices update in Host DRAM (Mapped with CSD)
     for(int v = 0; v < num_vertices; v++){
         hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
         hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
         hmb_dev.buf2.virt_addr[v] = 0.0;
     }
+
     for(int c = 0; c < num_partitions; c++){
         for(int r = 0; r < num_partitions; r++){
             for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -367,33 +412,6 @@ void end_of_iter_replacing()
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         hmb_dev.done_partition.virt_addr[num_partitions + csd_id + 1] = false;
     }
-}
-
-void conv_partition(size_t partition_id){
-    // LUMOS's get_partition_range in partition.hpp
-    size_t begin, end;
-    const size_t split_partition = num_vertices % num_partitions;
-    const size_t partition_size = num_vertices / num_partitions + 1;
-    if (partition_id < split_partition) {
-        begin = partition_id * partition_size;
-        end = (partition_id + 1) * partition_size;
-    }
-    else{
-        const size_t split_point = split_partition * partition_size;
-        begin = split_point + (partition_id - split_partition) * (partition_size - 1);
-        end = split_point + (partition_id - split_partition + 1) * (partition_size - 1);
-    }
-
-    // Conv the values, for convergence
-    for(size_t v = begin; v < end; v++)
-        hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
-    
-    // Notify CSD that partition c finish aggregation
-    long long num_pages = __ceil(end - begin, PAGE_SIZE);
-    long long end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
-    // printf("Aggregation time span: %lld\n", num_pages * (aggregation_read_time + aggregation_write_time));
-    while(get_time_ns() < end_time);
-    hmb_dev.done_partition.virt_addr[partition_id] = true;
 }
 
 int csd_proc_edge_loop_normal(void* buffer, int num_iter)
@@ -415,8 +433,8 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         }
         end_of_iter_replacing();
     }
-    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -463,6 +481,16 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     }
                     aggr_edge_block(c, c, false);
                 }
+
+                // Aggregate future values
+                size_t begin, end;
+                get_partition_range(c, &begin, &end);
+                for(size_t v = begin; v < end; v++){
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
+                        hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                    }
+                }
             }
         }
         else{
@@ -489,13 +517,23 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                         aggr_edge_block(r, c, false);
                 }
                 conv_partition(c);
+
+                // Aggregate future values
+                size_t begin, end;
+                get_partition_range(c, &begin, &end);
+                for(size_t v = begin; v < end; v++){
+                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                        hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
+                        hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                    }
+                }
             }
         }
         end_of_iter_replacing();
     }
 
-    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -555,8 +593,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
         end_of_iter_replacing();
     }
 
-    // for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
