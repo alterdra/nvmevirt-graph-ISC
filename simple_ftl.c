@@ -126,6 +126,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	}
 	
 	// Process normal values or future values according to iter in the command
+	long long start_time = ktime_get_ns();
 	int u = -1, v = -1;
 	for(; e < e_end; e += edge_size / vertex_size) {	
 		u = *e, v = *(e + 1);
@@ -136,6 +137,14 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		else{
 			hmb_dev.buf2.virt_addr[v + (long long)(csd_id + 1) * num_vertices] += hmb_dev.buf1.virt_addr[u] / outdegree[u];
 		}
+	}
+	long long end_time = ktime_get_ns();
+
+	// Compensation for MCU lower frequency
+	long long CSD_MCU_SPEED_RATIO = 10;
+	end_time = end_time + (end_time - start_time) * (CSD_MCU_SPEED_RATIO - 1);
+	while(ktime_get_ns() < end_time){
+		usleep_range(10, 20);
 	}
 
 	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;

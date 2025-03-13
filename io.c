@@ -88,6 +88,7 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
 	NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
 
 	// Process the edges
+	long long start_time = ktime_get_ns();
 	int u = -1, v = -1;
 	for(; e < e_end; e += edge_size / vertex_size) {	
 		u = *e, v = *(e + 1);
@@ -96,6 +97,14 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
 			NVMEV_INFO("Vertex %d has 0 outdegree\n");
 		// Write to CSD corresponding HMB position
 		dst[v + (long long)(csd_id + 1)* num_vertices] += src[u] / outdegree[u];
+	}
+	long long end_time = ktime_get_ns();
+
+	// Compensation for MCU lower frequency
+	long long CSD_MCU_SPEED_RATIO = 10;
+	end_time = end_time + (end_time - start_time) * (CSD_MCU_SPEED_RATIO - 1);
+	while(ktime_get_ns() < end_time){
+		usleep_range(10, 20);
 	}
 	
 	// For task.csd_id, Edge task.r, task.c is finished

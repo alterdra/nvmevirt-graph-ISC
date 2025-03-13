@@ -40,8 +40,8 @@ int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions]
 int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Aggregation latency
-long long aggregation_read_time = 0;
-long long aggregation_write_time = 0;
+long long aggregation_read_time = 20000;
+long long aggregation_write_time = 350000;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -433,7 +433,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         }
         end_of_iter_replacing();
     }
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
@@ -532,7 +532,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
         end_of_iter_replacing();
     }
 
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
@@ -593,7 +593,7 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
         end_of_iter_replacing();
     }
 
-    for(int i = max(0, num_vertices - 10); i < num_vertices; i++)
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
@@ -628,13 +628,13 @@ void test_sync_async(void* buffer){
 
 int main(int argc, char* argv[]) 
 {
-    if (argc<4) {
+    if (argc<3) {
 		fprintf(stderr, "usage: ./init_csd_edge [num_csds] [num_iters] [aggregation_latency]\n");
 		exit(-1);
 	}
     num_csds = atoi(argv[1]);
     int __num_iter = atoi(argv[2]);
-    aggregation_read_time = aggregation_write_time = atoi(argv[3]);
+    // aggregation_read_time = aggregation_write_time = atoi(argv[3]);
     
     
     // Allocate buffer
