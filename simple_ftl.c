@@ -12,6 +12,8 @@
 
 #include "simple_ftl.h"
 #include "core/queue.h"
+#include "core/csd_dram.h"
+#include "core/params.h"
 #include <hmb.h>
 
 #define sq_entry(entry_id) sq->sq[SQ_ENTRY_TO_PAGE_NUM(entry_id)][SQ_ENTRY_TO_PAGE_OFFSET(entry_id)]
@@ -105,32 +107,37 @@ static unsigned long long __schedule_flush(struct nvmev_request *req)
 
 void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 {
-	const int vertex_size = 4;
-	const int edge_size = 8;    //Unweighted
 	int csd_id = task.csd_id;
 	int num_vertices = task.num_vertices;
+	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
 
 	// Initialize the edge starting addresses
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
-	int* outdegree = storage + task.outdegree_slba / vertex_size;
-	int* e = storage + task.edge_block_slba / vertex_size;
-	int* e_end = e + task.edge_block_len / vertex_size;
+	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
+	int* e = storage + task.edge_block_slba / VERTEX_SIZE;
+	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
 	NVMEV_INFO("[Grafu CSD %d, %s()]: Processing edge-block-%u-%u, version %d:, io_time: %d", task.csd_id, __func__, task.r, task.c, task.iter, task.nsecs_target);
 	
 	// Edge block read I/O
-	if(task.iter == 0){
-		long long end_time = ktime_get_ns() + task.nsecs_target;
-		while(ktime_get_ns() < end_time){
-			usleep_range(10, 20);
-		}
+	// if(task.iter == 0){
+	// 	long long end_time = ktime_get_ns() + task.nsecs_target;
+	// 	while(ktime_get_ns() < end_time){
+	// 		usleep_range(10, 20);
+	// 	}
+	// }
+
+	long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
+	double ratio = 1.0 * (size_not_in_cache / task.edge_block_len);
+	long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
+	while(ktime_get_ns() < end_time){
+		usleep_range(10, 20);
 	}
 	
 	// Process normal values or future values according to iter in the command
 	long long start_time = ktime_get_ns();
 	int u = -1, v = -1;
-	for(; e < e_end; e += edge_size / vertex_size) {	
+	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
 		u = *e, v = *(e + 1);
-		unsigned long flags;
 		if(task.iter == 0){
 			hmb_dev.buf1.virt_addr[v + (long long)(csd_id + 1) * num_vertices] += hmb_dev.buf0.virt_addr[u] / outdegree[u];
 		}
@@ -141,8 +148,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	long long end_time = ktime_get_ns();
 
 	// Compensation for MCU lower frequency
-	long long CSD_MCU_SPEED_RATIO = 10;
-	end_time = end_time + (end_time - start_time) * (CSD_MCU_SPEED_RATIO - 1);
+	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
 		usleep_range(10, 20);
 	}
@@ -250,8 +256,6 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 				if(!queue_find(normal_task_queue, proc_edge_struct))
 					queue_enqueue(normal_task_queue, proc_edge_struct);
-				// NVMEV_INFO("%s: Enqueue Normal_task_queue: Queue size: %d, Edge-%u-%u, io_time_span: %llu(us)", 
-				// 	__func__, get_queue_size(normal_task_queue), proc_edge_struct.r, proc_edge_struct.c, finished_time / 1000);
 			}
 
 		}

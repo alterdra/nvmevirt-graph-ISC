@@ -125,7 +125,7 @@ static int nvme_submit_io(struct nvme_ns *ns, struct nvme_user_io __user *uio)
 	switch (io.opcode) {
 	case nvme_cmd_csd_proc_edge:
 		// NVMeVirt:
-		printk(KERN_INFO "[drivers/nvme/host/ioctl.c] [nvme_submit_io()] [nvme_cmd_csd_proc_edge]\n");
+		// printk(KERN_INFO "[drivers/nvme/host/ioctl.c] [nvme_submit_io()] [nvme_cmd_csd_proc_edge]\n");
 	case nvme_cmd_write:
 	case nvme_cmd_read:
 	case nvme_cmd_compare:
@@ -341,7 +341,7 @@ static int nvme_ns_ioctl(struct nvme_ns *ns, unsigned int cmd,
 	case NVME_IOCTL_SUBMIT_IO32:
 #endif
 	case NVME_IOCTL_SUBMIT_IO:
-		printk(KERN_INFO "[drivers/nvme/host/ioctl.c] [nvme_ns_ioctl()] NVME_IOCTL_SUBMIT_IO: %x\n", NVME_IOCTL_SUBMIT_IO);
+		// printk(KERN_INFO "[drivers/nvme/host/ioctl.c] [nvme_ns_ioctl()] NVME_IOCTL_SUBMIT_IO: %x\n", NVME_IOCTL_SUBMIT_IO);
 		return nvme_submit_io(ns, argp);
 	case NVME_IOCTL_IO64_CMD:
 		return nvme_user_cmd64(ns->ctrl, ns, argp);

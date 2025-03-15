@@ -12,36 +12,31 @@
 #include <time.h>
 
 #include "../core/proc_edge_struct.h"
+#include "../core/params.h"
 #include "hmb_mmap.h"
 
-#define SECTOR_SIZE 512
-#define NUM_SECTORS 8  // 4KB total
-#define PAGE_SIZE 4096
-#define MAX_NUM_CSDS 8
 
 // Virtual devices and file descripters
 int num_csds;
 const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
-int fd[8] = {0};
+int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
-const int num_partitions = 8;
-const int num_vertices = 4847571;
-const int vertex_size = 4;
-const int edge_size = 8;    //Unweighted
+int num_partitions;
+int num_vertices;
 const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 
 // Vertex data and aggregation info
 struct hmb_device hmb_dev = {0};
 
 // Edge Processing;
-int outdegree_slba;
-int*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
-int*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
+long long outdegree_slba;
+long long*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_partitions][num_csds]
+long long*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Aggregation latency
-long long aggregation_read_time = 20000;
-long long aggregation_write_time = 350000;
+long long aggregation_read_time = FLASH_READ_LATENCY;
+long long aggregation_write_time = FLASH_WRITE_LATENCY;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -149,18 +144,18 @@ int max(int x, int y){
 void malloc_edge_blocks_info()
 {
     // Initialize 3d array for edge blocks metadata
-    edge_blocks_slba = malloc(num_partitions * sizeof(int**));
+    edge_blocks_slba = malloc(num_partitions * sizeof(long long**));
     for (int i = 0; i < num_partitions; i++) {
-        edge_blocks_slba[i] = malloc(num_partitions * sizeof(int*));
+        edge_blocks_slba[i] = malloc(num_partitions * sizeof(long long*));
         for (int j = 0; j < num_partitions; j++) {
-            edge_blocks_slba[i][j] = malloc(num_csds * sizeof(int)); // Adjust "num_levels" as needed
+            edge_blocks_slba[i][j] = malloc(num_csds * sizeof(long long)); // Adjust "num_levels" as needed
         }
     }
-    edge_blocks_length = malloc(num_partitions * sizeof(int**));
+    edge_blocks_length = malloc(num_partitions * sizeof(long long**));
     for (int i = 0; i < num_partitions; i++) {
-        edge_blocks_length[i] = malloc(num_partitions * sizeof(int*));
+        edge_blocks_length[i] = malloc(num_partitions * sizeof(long long*));
         for (int j = 0; j < num_partitions; j++) {
-            edge_blocks_length[i][j] = malloc(num_csds * sizeof(int)); // Adjust "num_levels" as needed
+            edge_blocks_length[i][j] = malloc(num_csds * sizeof(long long)); // Adjust "num_levels" as needed
         }
     }
 }
@@ -200,10 +195,10 @@ int init_csds_data(int* fd, void *buffer)
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
     outdegree_slba = 0;
     sprintf(filename, "../LiveJournal.pl/outdegrees");
-    int edge_block_base_slba[num_csds];
+    long long edge_block_base_slba[num_csds];
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         FILE *file = fopen(filename, "rb");
-        int offset = 0;
+        long long offset = 0;
         while(fread(buffer, 1, buffer_size, file) > 0){
             setup_nvme_command(&io, buffer, 0x01, (outdegree_slba + offset) / SECTOR_SIZE);  // Setup write command
             ret = nvme_io_submit(fd[csd_id], &io);
@@ -221,35 +216,35 @@ int init_csds_data(int* fd, void *buffer)
 
     // Read edge blocks and write 4KB buffer outdegree into nvme virtual device
     malloc_edge_blocks_info();
-    int total_edges_saved = 0;
+    long long total_edges_saved = 0;
     for(int i = 0; i < num_partitions; i++){
         for(int j = 0; j < num_partitions; j++)
         {
             sprintf(filename, "../LiveJournal.pl/block-%d-%d", i, j);
-            int edge_block_size = getFileSize(filename);
-            int num_edge = edge_block_size / edge_size;
+            long long edge_block_size = getFileSize(filename);
+            long long num_edge = edge_block_size / EDGE_SIZE;
             total_edges_saved += num_edge;
             // printf("Edge block %d-%d Size: %d, Number of edges: %d\n", i, j, edge_block_size, num_edge);
 
             // Divide an edge block into num_csds portions
-            int csd_num_edges = num_edge / num_csds;
+            long long csd_num_edges = num_edge / num_csds;
             int csd_num_edges_remainder = num_edge % num_csds;
             for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                edge_blocks_length[i][j][csd_id] = edge_size * (csd_num_edges + (csd_id < csd_num_edges_remainder));
+                edge_blocks_length[i][j][csd_id] = 1LL * EDGE_SIZE * (csd_num_edges + (csd_id < csd_num_edges_remainder));
             }
             
             // Read edges from binary file "block-i-j", and write each portion to corresponding csds
             FILE *file = fopen(filename, "rb");
             for(int csd_id = 0; csd_id < num_csds; csd_id++)
             {
-                int offset = 0;
-                int remaining = edge_blocks_length[i][j][csd_id];
+                long long offset = 0;
+                long long remaining = edge_blocks_length[i][j][csd_id];
                 while (remaining > 0) {
                     int bytes = min(buffer_size, remaining);
                     fread(buffer, 1, bytes, file);
 
                     // Print the edges for edge saving correctness
-                    // for(int* e = buffer; e < buffer + bytes; e += edge_size / vertex_size){
+                    // for(int* e = buffer; e < buffer + bytes; e += EDGE_SIZE / VERTEX_SIZE){
                     //     int u = *e, v = *(e + 1);
                     //     if(v == 4847562)
                     //         printf("Dst[%d], Src[%d]\n", v, u);
@@ -272,7 +267,7 @@ int init_csds_data(int* fd, void *buffer)
             }
         }
     }
-    printf("Wrote %d edges to CSDs\n", total_edges_saved);
+    printf("Wrote %lld edges to CSDs\n", total_edges_saved);
 
     return 0;
 }
@@ -628,14 +623,21 @@ void test_sync_async(void* buffer){
 
 int main(int argc, char* argv[]) 
 {
-    if (argc<3) {
-		fprintf(stderr, "usage: ./init_csd_edge [num_csds] [num_iters] [aggregation_latency]\n");
+    if (argc<4) {
+		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters]\n");
 		exit(-1);
 	}
-    num_csds = atoi(argv[1]);
-    int __num_iter = atoi(argv[2]);
-    // aggregation_read_time = aggregation_write_time = atoi(argv[3]);
-    
+    char path[50];
+    strcpy(path, argv[1]);
+    strcat(path, "/meta");
+    num_csds = atoi(argv[2]);
+    int __num_iter = atoi(argv[3]);
+
+    // Initialize graph dataset metadata
+    FILE * fin_meta = fopen(path, "r");
+    int tmp[3];
+    fscanf(fin_meta, "%d %d %ld %d %d", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
+    fclose(fin_meta);
     
     // Allocate buffer
     void *buffer = allocate_dma_buffer(buffer_size);

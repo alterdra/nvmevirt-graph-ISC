@@ -25,6 +25,7 @@
 
 // Graph Processing
 #include "core/queue.h"
+#include "core/csd_dram.h"
 
 /****************************************************************
  * Memory Layout
@@ -199,7 +200,7 @@ static void NVMEV_DISPATCHER_INIT(struct nvmev_dev *nvmev_vdev)
 	// Graph  processing
 	queue_init(&(nvmev_vdev->normal_task_queue));
 	queue_init(&(nvmev_vdev->future_task_queue));
-
+	edge_buffer_init(&(nvmev_vdev->edge_buf));
 
 	nvmev_vdev->nvmev_dispatcher = kthread_create(nvmev_dispatcher, NULL, "nvmev_dispatcher");
 	if (nvmev_vdev->config.cpu_nr_dispatcher != -1)
@@ -212,6 +213,7 @@ static void NVMEV_DISPATCHER_FINAL(struct nvmev_dev *nvmev_vdev)
 	// Graph processing
 	queue_destroy(&(nvmev_vdev->normal_task_queue));
 	queue_destroy(&(nvmev_vdev->future_task_queue));
+	edge_buffer_destroy(&(nvmev_vdev->edge_buf));
 
 	if (!IS_ERR_OR_NULL(nvmev_vdev->nvmev_dispatcher)) {
 		kthread_stop(nvmev_vdev->nvmev_dispatcher);

@@ -1,31 +1,55 @@
 #include "csd_dram.h"
 
-void init_edge_buffer(struct edge_buffer *buf);
-void distroy_edge_buffer(struct edge_buffer *buf);
-
-void cache_edge_block(struct edge_buffer *buf, int r, int c, int size)
+void edge_buffer_init(struct edge_buffer *buf)
 {
-    evict_edge_block_lifo(buf, size);
+    INIT_LIST_HEAD(&buf->head);
+    mutex_init(&buf->lock);
+    buf->size = 0;
+    buf->capacity = CSD_DRAM_SIZE;
+}
 
-    struct edge_buffer_unit *unit = kmalloc(sizeof(struct edge_buffer_unit), GFP_KERNEL);
-    unit->r = r;
-    unit->c = c;
-    unit->size = size;
+void edge_buffer_destroy(struct edge_buffer *buf)
+{
+    struct edge_buffer_unit *unit, *tmp;
 
     mutex_lock(&buf->lock);
-    buf->size += size;
-    list_add_tail(&unit->list, &buf->head);
+    list_for_each_entry_safe(unit, tmp, &buf->head, list) {
+        list_del(&unit->list);
+        kfree(unit);
+    }
+    buf->size = 0;
     mutex_unlock(&buf->lock);
 }
 
-void evict_edge_block_lifo(struct edge_buffer_unit *buf, int size) 
+long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size)
 {
-    if (list_empty(&buf->head)) {
-        return -1; // Queue is empty
-    }
+    int curr_size = get_edge_block_size(buf, r, c);
+    if(curr_size == -1){
+        // Edge block not in cache
+        evict_edge_block_lifo(buf, size);
+        struct edge_buffer_unit *unit = kmalloc(sizeof(struct edge_buffer_unit), GFP_KERNEL);
+        unit->r = r;
+        unit->c = c;
+        unit->size = min(buf->capacity, size);
 
+        mutex_lock(&buf->lock);
+        buf->size += size;
+        list_add_tail(&unit->list, &buf->head);
+        mutex_unlock(&buf->lock);
+        return size;
+    }
+    // Partial (or full) edge block in cache, must be list head for FVC access pattern
+    else{
+        evict_edge_block_lifo(buf, size - curr_size);
+        invalidate_edge_block_fifo(buf);
+        return size - curr_size;
+    }
+}
+
+void evict_edge_block_lifo(struct edge_buffer *buf, long long size) 
+{
     struct edge_buffer_unit *unit;
-    while(buf->size + size > buf->capacity)
+    while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
     {
         mutex_lock(&buf->lock);
         unit = list_last_entry(&buf->head, struct edge_buffer_unit, list);
@@ -36,22 +60,20 @@ void evict_edge_block_lifo(struct edge_buffer_unit *buf, int size)
         }
         else{
             // Partial evict the edge block
-            unit->size -= buf->size + size - buf->capacity;
-            buf->size = buf->capacity - size;
+            long long diff = buf->size + size - buf->capacity;
+            unit->size -= diff;
+            buf->size -= diff;
             mutex_unlock(&buf->lock);
             break;
         }
     }
     kfree(unit);
-
-    return 0; // Success
 }
 
-void invalidate_edge_block_fifo(struct edge_buffer_unit *buf)
+void invalidate_edge_block_fifo(struct edge_buffer *buf)
 {
-    if (list_empty(&buf->head)) {
-        return -1; // Queue is empty
-    }
+    if(list_empty(&buf->head))
+        return;
 
     struct edge_buffer_unit *unit;
     mutex_lock(&buf->lock);
@@ -60,11 +82,9 @@ void invalidate_edge_block_fifo(struct edge_buffer_unit *buf)
     list_del(&unit->list);
     mutex_unlock(&buf->lock);
     kfree(unit);
-
-    return 0; // Success
 }
 
-int get_edge_block_size(struct edge_buffer *buf, int r, int c)
+long long get_edge_block_size(struct edge_buffer *buf, int r, int c)
 {
     struct edge_buffer_unit *unit;
     mutex_lock(&buf->lock);
@@ -75,5 +95,5 @@ int get_edge_block_size(struct edge_buffer *buf, int r, int c)
         }
     }
     mutex_unlock(&buf->lock);
-    return NULL;
+    return -1;      // Not found
 }

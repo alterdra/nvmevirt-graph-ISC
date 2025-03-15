@@ -10,7 +10,7 @@ CONFIG_NVMEVIRT_NVM := y
 #CONFIG_NVMEVIRT_KV := y
 
 obj-m   := $(TARGET).o hmb/hmb.o
-$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o core/fixed_point.o
+$(TARGET)-objs := main.o pci.o admin.o io.o dma.o core/queue.o core/csd_dram.o
 ccflags-y += -Wno-unused-variable -Wno-unused-function 
 
 # HMB

@@ -17,8 +17,10 @@
 
 #include "nvmev.h"
 #include "dma.h"
+
 #include "core/queue.h"
-#include "core/fixed_point.h"
+#include "core/csd_dram.h"
+#include "core/params.h"
 #include <hmb.h>
 
 #if (SUPPORTED_SSD_TYPE(CONV) || SUPPORTED_SSD_TYPE(ZNS))
@@ -73,36 +75,29 @@ void print_vertex_info(int csd_id, int* outdegree, int u, int v)
 	NVMEV_INFO("[CSD %d] src_vtx[%d]: %u.%06u, outdegree[%d]: %d, dst_vtx[%d]: %u.%06u\n", csd_id, u, i_src, f_src, u, outdegree[u], v, i_dst, f_dst);
 }
 
-void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done){
-
-	const int vertex_size = 4;
-	const int edge_size = 8; 
+void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
+{
 	int csd_id = task.csd_id;
 	int num_vertices = task.num_vertices;
 
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
-	int* outdegree = storage + task.outdegree_slba / vertex_size;
-	int* e = storage + task.edge_block_slba / vertex_size;
-	int* e_end = e + task.edge_block_len / vertex_size;
+	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
+	int* e = storage + task.edge_block_slba / VERTEX_SIZE;
+	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
 
 	NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
 
 	// Process the edges
 	long long start_time = ktime_get_ns();
 	int u = -1, v = -1;
-	for(; e < e_end; e += edge_size / vertex_size) {	
+	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
 		u = *e, v = *(e + 1);
-		// Error handling
-		if(outdegree[u] == 0)
-			NVMEV_INFO("Vertex %d has 0 outdegree\n");
-		// Write to CSD corresponding HMB position
 		dst[v + (long long)(csd_id + 1)* num_vertices] += src[u] / outdegree[u];
 	}
 	long long end_time = ktime_get_ns();
 
 	// Compensation for MCU lower frequency
-	long long CSD_MCU_SPEED_RATIO = 10;
-	end_time = end_time + (end_time - start_time) * (CSD_MCU_SPEED_RATIO - 1);
+	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
 		usleep_range(10, 20);
 	}
@@ -118,6 +113,7 @@ void __do_perform_edge_proc(void)
 {
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 	struct queue *future_task_queue = &(nvmev_vdev->future_task_queue);
+	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
 
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
@@ -164,6 +160,14 @@ void __do_perform_edge_proc(void)
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			queue_dequeue(future_task_queue, &task);
+
+			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
+			double ratio = 1.0 * (size_not_in_cache / task.edge_block_len);
+			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
+			while(ktime_get_ns() < end_time){
+				usleep_range(10, 20);
+			}
+
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 
 			// Fake E_00 task: for even iter end of iteration
@@ -177,7 +181,14 @@ void __do_perform_edge_proc(void)
 			queue_dequeue(normal_task_queue, &task);
 
 			// Edge_block I/O blocking
-			long long end_time = ktime_get_ns() + task.nsecs_target;
+			// long long end_time = ktime_get_ns() + task.nsecs_target;
+			// while(ktime_get_ns() < end_time){
+			// 	usleep_range(10, 20);
+			// }
+			
+			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
+			double ratio = 1.0 * (size_not_in_cache / task.edge_block_len);
+			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			while(ktime_get_ns() < end_time){
 				usleep_range(10, 20);
 			}
@@ -206,8 +217,6 @@ void __do_perform_edge_proc(void)
 					queue_enqueue(future_task_queue, task);
 				}
 			}
-
-			// CSD DRAM update
 		}
 	}
 }

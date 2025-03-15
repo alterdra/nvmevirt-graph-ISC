@@ -1025,7 +1025,7 @@ blk_status_t nvme_setup_cmd(struct nvme_ns *ns, struct request *req)
 
 	// NVMeVirt
 	case REQ_OP_CSD_PROC_EDGE:
-		printk(KERN_INFO "[drivers/nvme/host/core.c] [nvme_setup_cmd()] REQ_OP_CSD_PROC_EDGE: %x\n", REQ_OP_CSD_PROC_EDGE);
+		// printk(KERN_INFO "[drivers/nvme/host/core.c] [nvme_setup_cmd()] REQ_OP_CSD_PROC_EDGE: %x\n", REQ_OP_CSD_PROC_EDGE);
 		ret = nvme_setup_rw(ns, req, cmd, nvme_cmd_csd_proc_edge);
 		break;
 

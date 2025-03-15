@@ -9,6 +9,7 @@
 
 #include "nvme.h"
 #include "core/queue.h"
+#include "core/csd_dram.h"
 
 #define CONFIG_NVMEV_IO_WORKER_BY_SQ
 #undef CONFIG_NVMEV_FAST_X86_IRQ_HANDLING
@@ -250,12 +251,12 @@ struct nvmev_dev {
 	struct nvmev_submission_queue *sqes[NR_MAX_IO_QUEUE + 1];
 	struct nvmev_completion_queue *cqes[NR_MAX_IO_QUEUE + 1];
 
-	// Graph Processing
-	// Task Queues (edge blocks)
+	// Graph Processing: Task Queues (edge blocks)
 	struct queue normal_task_queue;
 	struct queue future_task_queue;
 
-	// Todo: CSD DRAM
+	// CSD DRAM
+	struct edge_buffer edge_buf;
 
 	unsigned int mdts;
 
