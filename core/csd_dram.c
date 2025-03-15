@@ -6,6 +6,7 @@ void edge_buffer_init(struct edge_buffer *buf)
     mutex_init(&buf->lock);
     buf->size = 0;
     buf->capacity = CSD_DRAM_SIZE;
+    buf->hit_cnt = buf->total_access_cnt = 0;
 }
 
 void edge_buffer_destroy(struct edge_buffer *buf)
@@ -18,12 +19,20 @@ void edge_buffer_destroy(struct edge_buffer *buf)
         kfree(unit);
     }
     buf->size = 0;
+    buf->hit_cnt = buf->total_access_cnt = 0;
     mutex_unlock(&buf->lock);
+}
+
+long long get_size(struct edge_buffer *buf){
+    mutex_lock(&buf->lock);
+    long long res = buf->size;
+    mutex_unlock(&buf->lock);
+    return res;
 }
 
 long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size)
 {
-    int curr_size = get_edge_block_size(buf, r, c);
+    long long curr_size = get_edge_block_size(buf, r, c);
     if(curr_size == -1){
         // Edge block not in cache
         evict_edge_block_lifo(buf, size);
@@ -33,15 +42,23 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
         unit->size = min(buf->capacity, size);
 
         mutex_lock(&buf->lock);
-        buf->size += size;
+        buf->size += unit->size;
+        buf->total_access_cnt += size / PAGE_SIZE;
         list_add_tail(&unit->list, &buf->head);
         mutex_unlock(&buf->lock);
+
         return size;
     }
     // Partial (or full) edge block in cache, must be list head for FVC access pattern
     else{
         evict_edge_block_lifo(buf, size - curr_size);
         invalidate_edge_block_fifo(buf);
+
+        mutex_lock(&buf->lock);
+        buf->hit_cnt += curr_size / PAGE_SIZE;
+        buf->total_access_cnt += size / PAGE_SIZE;
+        mutex_unlock(&buf->lock);
+
         return size - curr_size;
     }
 }
@@ -57,6 +74,7 @@ void evict_edge_block_lifo(struct edge_buffer *buf, long long size)
             buf->size -= unit->size;
             list_del(&unit->list);
             mutex_unlock(&buf->lock);
+            kfree(unit);
         }
         else{
             // Partial evict the edge block
@@ -67,7 +85,6 @@ void evict_edge_block_lifo(struct edge_buffer *buf, long long size)
             break;
         }
     }
-    kfree(unit);
 }
 
 void invalidate_edge_block_fifo(struct edge_buffer *buf)

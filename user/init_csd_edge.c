@@ -409,6 +409,18 @@ void end_of_iter_replacing()
     }
 }
 
+int flush_csd_dram(void* buffer)
+{
+    int ret;
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM);
+        if(ret < 0){
+            cleanup(buffer);
+            return -1;
+        }
+    }
+}
+
 int csd_proc_edge_loop_normal(void* buffer, int num_iter)
 {
     int ret;
@@ -428,6 +440,9 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         }
         end_of_iter_replacing();
     }
+    if(flush_csd_dram(buffer) == -1)
+        return -1;
+
     for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
@@ -526,6 +541,8 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
         }
         end_of_iter_replacing();
     }
+    if(flush_csd_dram(buffer) == -1)
+        return -1;
 
     for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
@@ -587,6 +604,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
         end_of_iter_waiting();
         end_of_iter_replacing();
     }
+    if(flush_csd_dram(buffer) == -1)
+        return -1;
 
     for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
         printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);

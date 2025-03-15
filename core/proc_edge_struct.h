@@ -4,6 +4,7 @@
 #include <linux/types.h> // For __u64 and __u32 definitions
 #define SYNC 1
 #define ASYNC 2
+#define FLUSH_CSD_DRAM 3
 
 struct PROC_EDGE 
 {

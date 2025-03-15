@@ -86,7 +86,7 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
 
 	NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
-
+	
 	// Process the edges
 	long long start_time = ktime_get_ns();
 	int u = -1, v = -1;
@@ -162,7 +162,7 @@ void __do_perform_edge_proc(void)
 			queue_dequeue(future_task_queue, &task);
 
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-			double ratio = 1.0 * (size_not_in_cache / task.edge_block_len);
+			double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			while(ktime_get_ns() < end_time){
 				usleep_range(10, 20);
@@ -187,7 +187,7 @@ void __do_perform_edge_proc(void)
 			// }
 			
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-			double ratio = 1.0 * (size_not_in_cache / task.edge_block_len);
+			double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			while(ktime_get_ns() < end_time){
 				usleep_range(10, 20);

@@ -21,9 +21,9 @@
 #define CPU_MCU_SPEED_RATIO 10
 
 // CSD DRAM Capacity
-#define KB 1024LL
-#define MB (KB * KB)
-#define GB (KB * KB * KB)
-#define CSD_DRAM_SIZE GB
+#define _KB 1024LL
+#define _MB (_KB * _KB)
+#define _GB (_KB * _KB * _KB)
+#define CSD_DRAM_SIZE (10 * _MB)
 
 #endif
