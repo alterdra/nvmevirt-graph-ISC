@@ -42,3 +42,6 @@ done
 
 # sudo cat /proc/iomem
 # Checking valid System RAM
+
+# sudo ./init_csd_edge ../LiveJournal.pl 2 10
+

@@ -22,11 +22,10 @@ struct edge_buffer {
 
 void edge_buffer_init(struct edge_buffer *buf);
 void edge_buffer_destroy(struct edge_buffer *buf);
-long long get_size(struct edge_buffer *buf);
 
 long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size);
-void evict_edge_block_lifo(struct edge_buffer *buf, long long size);
-void evict_edge_block_fifo(struct edge_buffer *buf, long long size);
+void evict_edge_block(struct edge_buffer *buf, long long size);
+void invalidate_edge_block(struct edge_buffer *buf, int r, int c);
 void invalidate_edge_block_fifo(struct edge_buffer *buf);
 long long get_edge_block_size(struct edge_buffer *buf, int r, int c);
 

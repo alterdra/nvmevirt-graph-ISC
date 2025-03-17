@@ -128,7 +128,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	long long start_time, end_time;
 	long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 	double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
-	NVMEV_INFO("[Grafu/Normal CSD %d, %s()]: Processing edge-block-%u-%u, size: %lld, version %d, io_time: %lld-->%lld", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter, task.nsecs_target, (long long) (task.nsecs_target * ratio));
+	// NVMEV_INFO("[Grafu/Normal CSD %d, %s()]: Processing edge-block-%u-%u, size: %lld, version %d, io_time: %lld-->%lld", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter, task.nsecs_target, (long long) (task.nsecs_target * ratio));
 	// NVMEV_INFO("Edge Size not in cache: %lld. Edge Size: %lld, Cache size: %lld", size_not_in_cache, task.edge_block_len, get_size(edge_buf));
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 	while(ktime_get_ns() < end_time){
@@ -260,8 +260,10 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 					queue_enqueue(normal_task_queue, proc_edge_struct);
 			}
 			else if(csd_flag == FLUSH_CSD_DRAM){
-				NVMEV_INFO("---------Hit/Total: %lld/%lld", nvmev_vdev->edge_buf.hit_cnt, nvmev_vdev->edge_buf.total_access_cnt);
+				NVMEV_INFO("Hit/Total: %lld/%lld", nvmev_vdev->edge_buf.hit_cnt, nvmev_vdev->edge_buf.total_access_cnt);
+				hmb_dev.buf2.virt_addr[proc_edge_struct.csd_id] = 1.0f * nvmev_vdev->edge_buf.hit_cnt / nvmev_vdev->edge_buf.total_access_cnt;
 				edge_buffer_destroy(&(nvmev_vdev->edge_buf));
+				hmb_dev.done2.virt_addr[proc_edge_struct.csd_id] = true;
 			}
 
 		}

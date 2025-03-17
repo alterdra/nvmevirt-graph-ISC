@@ -26,6 +26,7 @@
 // Graph Processing
 #include "core/queue.h"
 #include "core/csd_dram.h"
+#include "core/params.h"
 
 /****************************************************************
  * Memory Layout
@@ -66,7 +67,7 @@ static unsigned long memmap_size = 0;
 // static unsigned int read_time = 1;
 // static unsigned int read_delay = 1;
 // static unsigned int read_trailing = 0;
-static unsigned int read_time = 20000;
+static unsigned int read_time = FLASH_READ_LATENCY;
 static unsigned int read_delay = 0;
 static unsigned int read_trailing = 0;
 

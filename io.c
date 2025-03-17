@@ -84,8 +84,6 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
 	int* e = storage + task.edge_block_slba / VERTEX_SIZE;
 	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
-
-	NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u (Future) (iter: %d)", task.csd_id, __func__, task.r, task.c, task.iter);
 	
 	// Process the edges
 	long long start_time = ktime_get_ns();
@@ -96,11 +94,15 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	}
 	long long end_time = ktime_get_ns();
 
+	NVMEV_INFO("gg1: %x %x %x %lld", storage, outdegree, e_end, (long long)(csd_id + 1) * num_vertices);
+
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
 		usleep_range(10, 20);
 	}
+
+	NVMEV_INFO("gg2");
 	
 	// For task.csd_id, Edge task.r, task.c is finished
 	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
@@ -137,7 +139,7 @@ void __do_perform_edge_proc(void)
 
 				// All normal task must be done --> swap normal queue and future queue
 				queue_swap(normal_task_queue, future_task_queue);
-				NVMEV_INFO("CSD %d, %s, Swap queues, Queue sizes: %d, %d", task.csd_id, __func__, get_queue_size(normal_task_queue), get_queue_size(future_task_queue));
+				// NVMEV_INFO("CSD %d, %s, Swap queues, Queue sizes: %d, %d", task.csd_id, __func__, get_queue_size(normal_task_queue), get_queue_size(future_task_queue));
 				
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
@@ -147,7 +149,7 @@ void __do_perform_edge_proc(void)
 				int csd_id = task.csd_id;
 				int num_vertices = task.num_vertices;
 				long long offset = (task.csd_id + 1) * task.num_vertices;
-				int v;
+				long long v;
 				for(v = 0; v < num_vertices; v++){
 				    hmb_dev.buf1.virt_addr[v + offset] = hmb_dev.buf2.virt_addr[v + offset];
 				    hmb_dev.buf2.virt_addr[v + offset] = 0.0;
@@ -160,12 +162,17 @@ void __do_perform_edge_proc(void)
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			queue_dequeue(future_task_queue, &task);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-			double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
+#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
+        	invalidate_edge_block(edge_buf, task.r, task.c);
+			// invalidate_edge_block_fifo(edge_buf);
+#endif
+			double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			while(ktime_get_ns() < end_time){
-				usleep_range(10, 20);
+				// usleep_range(10, 20);
 			}
 
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
@@ -179,18 +186,17 @@ void __do_perform_edge_proc(void)
 		else if(get_queue_size(normal_task_queue))
 		{
 			queue_dequeue(normal_task_queue, &task);
-
-			// Edge_block I/O blocking
-			// long long end_time = ktime_get_ns() + task.nsecs_target;
-			// while(ktime_get_ns() < end_time){
-			// 	usleep_range(10, 20);
-			// }
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 			
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-			double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
+#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
+			if(task.iter == 0 && task.r > task.c)	// lower triangle
+        		invalidate_edge_block(edge_buf, task.r, task.c);
+#endif
+			double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			while(ktime_get_ns() < end_time){
-				usleep_range(10, 20);
+				// usleep_range(10, 20);
 			}
 
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);

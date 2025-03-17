@@ -413,11 +413,15 @@ int flush_csd_dram(void* buffer)
 {
     int ret;
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        hmb_dev.done2.virt_addr[csd_id] = false;
         ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM);
         if(ret < 0){
             cleanup(buffer);
             return -1;
         }
+    }
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        while(!hmb_dev.done2.virt_addr[csd_id]);
     }
 }
 
@@ -613,31 +617,47 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     return 0;
 }
 
-void test_sync_async(void* buffer){
-    int __num_iter = 5;
-    int s, e;
-    long long total_sync = 0, total_async = 0;
-    for(int i = 0; i < 15; i++){
-        printf("Dual queues");
-        // send_proc_edge(5, 4, 0, 0, __num_iter, ASYNC);
-        init_csds_data(fd, buffer);
-        s = get_time_ns();
-        csd_proc_edge_loop_dual_queue(buffer, __num_iter);
-        e = get_time_ns();
-        total_async += e - s;
-    }
-    // for(int i = 0; i < 15; i++){
-    //     printf("Grafu:");
-    //     init_csds_data(fd, buffer);
-    //     s = get_time_ns();
-    //     csd_proc_edge_loop_grafu(buffer, __num_iter);
-    //     // send_proc_edge(5, 4, 0, 0, __num_iter, SYNC);
-    //     e = get_time_ns();
+void run_normal_grafu_dq(void* buffer, int __num_iter){
+    
+    long long s, e;
+    
+    printf("Normal-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_normal(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
 
-    //     total_sync += e - s;
-    // }
-    printf("ASYNC avg.: %lld us\n", total_async / 1000);
-    printf("SYNC avg.: %lld ns\n", total_sync / 1000);
+    printf("Grafu-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_grafu(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
+
+    printf("DQ--------------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld us\n", (e - s) / 1000);
+}
+
+void run_dq_cache_hitrate(void* buffer, int __num_iter)
+{
+    float cache_hit_rate = 0.0;
+    int experiment_num = 5;
+    for(int i = 0; i < experiment_num; i++){
+        printf("DQ--------------");
+        init_csds_data(fd, buffer);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+            printf("%f ", hmb_dev.buf2.virt_addr[csd_id]);
+        }
+        printf("\n");
+    }
+    printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds / experiment_num);
 }
 
 int main(int argc, char* argv[]) 
@@ -682,30 +702,8 @@ int main(int argc, char* argv[])
 
     printf("Num iter: %d\n", __num_iter);
 
-    long long s, e;
-    
-    printf("Normal-----------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_normal(buffer, __num_iter);
-    e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
-
-    printf("Grafu-----------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_grafu(buffer, __num_iter);
-    e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
-
-    printf("DQ--------------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter);
-    e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
-
-    // test_sync_async(buffer);
+    // run_normal_grafu_dq(buffer, __num_iter);
+    run_dq_cache_hitrate(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;
