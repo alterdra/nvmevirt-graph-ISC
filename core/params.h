@@ -24,7 +24,7 @@
 #define _KB 1024LL
 #define _MB (_KB * _KB)
 #define _GB (_KB * _KB * _KB)
-#define CSD_DRAM_SIZE (20 * _MB)
+#define CSD_DRAM_SIZE (19 * _MB)
 
 // Cache eviction policy
 #define CONFIG_CSD_DRAM_LIFO

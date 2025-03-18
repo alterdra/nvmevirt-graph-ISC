@@ -32,6 +32,10 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
         // Edge block not in cache
         evict_edge_block(buf, size);
         struct edge_buffer_unit *unit = kmalloc(sizeof(struct edge_buffer_unit), GFP_KERNEL);
+        if (!unit) {
+            pr_err("Failed to allocate memory for new csd dram unit\n");
+            return -1;
+        }
         unit->r = r;
         unit->c = c;
         unit->size = size > buf->capacity ? buf->capacity : size;
@@ -105,7 +109,7 @@ void invalidate_edge_block(struct edge_buffer * buf, int r, int c)
     struct edge_buffer_unit *unit;
     list_for_each_entry(unit, &buf->head, list) {
         if (unit->r == r && unit->c == c) {
-            printk(KERN_INFO "Remove edge-block-%u-%u, size: %lld", r, c, unit->size);
+            // printk(KERN_INFO "Remove edge-block-%u-%u, size: %lld", r, c, unit->size);
             buf->size -= unit->size;
             list_del(&unit->list);
             kfree(unit);

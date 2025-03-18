@@ -118,23 +118,18 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
 	
 	// Edge block read I/O
-	// if(task.iter == 0){
-	// 	long long end_time = ktime_get_ns() + task.nsecs_target;
-	// 	while(ktime_get_ns() < end_time){
-	// 		usleep_range(10, 20);
-	// 	}
-	// }
-
 	long long start_time, end_time;
 	long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-	double ratio = task.edge_block_len == 0 ? 1 : (size_not_in_cache / task.edge_block_len);
-	// NVMEV_INFO("[Grafu/Normal CSD %d, %s()]: Processing edge-block-%u-%u, size: %lld, version %d, io_time: %lld-->%lld", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter, task.nsecs_target, (long long) (task.nsecs_target * ratio));
-	// NVMEV_INFO("Edge Size not in cache: %lld. Edge Size: %lld, Cache size: %lld", size_not_in_cache, task.edge_block_len, get_size(edge_buf));
+#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
+	if(task.iter == 0 && task.r > task.c)	// lower triangle
+		invalidate_edge_block(edge_buf, task.r, task.c);
+#endif
+	double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 	while(ktime_get_ns() < end_time){
-		usleep_range(10, 20);
+		// usleep_range(10, 20);
 	}
-	
+
 	// Process normal values or future values according to iter in the command
 	start_time = ktime_get_ns();
 	int u = -1, v = -1;

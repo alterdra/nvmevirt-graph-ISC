@@ -94,15 +94,13 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	}
 	long long end_time = ktime_get_ns();
 
-	NVMEV_INFO("gg1: %x %x %x %lld", storage, outdegree, e_end, (long long)(csd_id + 1) * num_vertices);
+	// NVMEV_INFO("gg1: %x %x %x %lld", storage, outdegree, e_end, (long long)(csd_id + 1) * num_vertices);
 
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
 		usleep_range(10, 20);
 	}
-
-	NVMEV_INFO("gg2");
 	
 	// For task.csd_id, Edge task.r, task.c is finished
 	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
@@ -162,7 +160,7 @@ void __do_perform_edge_proc(void)
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			queue_dequeue(future_task_queue, &task);
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
+			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 #ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
@@ -186,7 +184,7 @@ void __do_perform_edge_proc(void)
 		else if(get_queue_size(normal_task_queue))
 		{
 			queue_dequeue(normal_task_queue, &task);
-			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
+			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 			
 			long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 #ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
