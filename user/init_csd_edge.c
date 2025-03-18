@@ -35,8 +35,8 @@ long long*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_parti
 long long*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Aggregation latency
-long long aggregation_read_time = FLASH_READ_LATENCY;
-long long aggregation_write_time = FLASH_WRITE_LATENCY;
+long long aggregation_read_time = AGG_FLASH_READ_LATENCY;
+long long aggregation_write_time = AGG_FLASH_WRITE_LATENCY;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -362,7 +362,7 @@ void conv_partition(size_t partition_id){
         hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
     
     // Notify CSD that partition c finish aggregation
-    long long num_pages = __ceil(end - begin, PAGE_SIZE);
+    long long num_pages = 4LL * __ceil(end - begin, PAGE_SIZE);
     long long end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
     // printf("Aggregation time span: %lld\n", num_pages * (aggregation_read_time + aggregation_write_time));
     while(get_time_ns() < end_time);
@@ -579,7 +579,10 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
             // 2. Aggregate for each columns
             for(int c = 0; c < num_partitions; c++){
                 aggr_partition(c);
+                // long long end_start = get_time_ns();
                 conv_partition(c);
+                // long long end_end = get_time_ns();
+                // printf("Aggreagtion time: %lld us\n", (end_end - end_start) / 1000);
             }
 
         }
@@ -600,13 +603,19 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
             }
             for(int c = num_partitions - 1; c >= 0; c--){
                 aggr_partition(c);
+                // long long end_start = get_time_ns();
                 conv_partition(c);
+                // long long end_end = get_time_ns();
+                // printf("Aggreagtion time: %lld us\n", (end_end - end_start) / 1000);
             }
         }
         // 3. End of the iter update
         // Performed after last column aggregation end (e.g. Ensuring CSD are notified)
+        // long long end_start = get_time_ns();
         end_of_iter_waiting();
         end_of_iter_replacing();
+        // long long end_end = get_time_ns();
+        // printf("End-of-iter update time: %lld us\n", (end_end - end_start) / 1000);
     }
     if(flush_csd_dram(buffer) == -1)
         return -1;

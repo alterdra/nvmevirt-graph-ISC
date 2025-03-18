@@ -120,10 +120,6 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	// Edge block read I/O
 	long long start_time, end_time;
 	long long size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
-	if(task.iter == 0 && task.r > task.c)	// lower triangle
-		invalidate_edge_block(edge_buf, task.r, task.c);
-#endif
 	double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 	while(ktime_get_ns() < end_time){
