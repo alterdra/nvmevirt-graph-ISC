@@ -6,7 +6,8 @@
 
 #define DEVICE_NAME "hmb_mem"
 #define MB_256 (256 * 1024 * 1024UL)
-#define HMB_SIZE MB_256
+#define GB_5 (5LL * 1024 * 1024 * 1024)
+#define HMB_SIZE GB_5
 
 /* Structure for a single HMB buffer */
 struct hmb_buffer {

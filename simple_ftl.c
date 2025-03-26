@@ -143,7 +143,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
-		usleep_range(10, 20);
+		// usleep_range(10, 20);
 	}
 
 	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;

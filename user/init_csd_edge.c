@@ -18,7 +18,9 @@
 
 // Virtual devices and file descripters
 int num_csds;
-const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
+// const char device[MAX_NUM_CSDS][20] = {"/dev/nvmen1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
+// imdt
+const char device[MAX_NUM_CSDS][20] = {"/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1"};
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
@@ -655,17 +657,24 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
 void run_dq_cache_hitrate(void* buffer, int __num_iter)
 {
     float cache_hit_rate = 0.0;
-    int experiment_num = 5;
+    int experiment_num = 1;
+    long long total_time = 0;
+    long long s, e;
     for(int i = 0; i < experiment_num; i++){
         printf("DQ--------------");
         init_csds_data(fd, buffer);
+        s = get_time_ns();
         csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+        e = get_time_ns();
+        printf("Execution time: %lld us\n", (e - s) / 1000);
+        total_time += (e - s) / 1000;
         for(int csd_id = 0; csd_id < num_csds; csd_id++){
             cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
             printf("%f ", hmb_dev.buf2.virt_addr[csd_id]);
         }
         printf("\n");
     }
+    printf("Avg. execution time: %lld\n", total_time / experiment_num);
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds / experiment_num);
 }
 
@@ -711,8 +720,8 @@ int main(int argc, char* argv[])
 
     printf("Num iter: %d\n", __num_iter);
 
-    run_normal_grafu_dq(buffer, __num_iter);
-    // run_dq_cache_hitrate(buffer, __num_iter);
+    // run_normal_grafu_dq(buffer, __num_iter);
+    run_dq_cache_hitrate(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

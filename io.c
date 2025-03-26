@@ -99,7 +99,7 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
-		usleep_range(10, 20);
+		// usleep_range(10, 20);
 	}
 	
 	// For task.csd_id, Edge task.r, task.c is finished
@@ -169,6 +169,7 @@ void __do_perform_edge_proc(void)
 #endif
 			double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				// usleep_range(10, 20);
 			}
@@ -193,6 +194,7 @@ void __do_perform_edge_proc(void)
 #endif
 			double ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			long long end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
+			NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				// usleep_range(10, 20);
 			}
