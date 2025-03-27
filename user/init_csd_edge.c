@@ -24,6 +24,7 @@ const char device[MAX_NUM_CSDS][20] = {"/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvm
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
+char dataset_path[30];
 int num_partitions;
 int num_vertices;
 const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
@@ -196,7 +197,7 @@ int init_csds_data(int* fd, void *buffer)
 
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
     outdegree_slba = 0;
-    sprintf(filename, "../LiveJournal.pl/outdegrees");
+    sprintf(filename, "%s/outdegrees", dataset_path);
     long long edge_block_base_slba[num_csds];
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         FILE *file = fopen(filename, "rb");
@@ -222,7 +223,7 @@ int init_csds_data(int* fd, void *buffer)
     for(int i = 0; i < num_partitions; i++){
         for(int j = 0; j < num_partitions; j++)
         {
-            sprintf(filename, "../LiveJournal.pl/block-%d-%d", i, j);
+            sprintf(filename, "%s/block-%d-%d", dataset_path, i, j);
             long long edge_block_size = getFileSize(filename);
             long long num_edge = edge_block_size / EDGE_SIZE;
             total_edges_saved += num_edge;
@@ -622,8 +623,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -662,7 +663,10 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
     long long s, e;
     for(int i = 0; i < experiment_num; i++){
         printf("DQ--------------");
-        init_csds_data(fd, buffer);
+        if(init_csds_data(fd, buffer) == -1){
+            printf("Init CSD edge data failed");
+            break;
+        }
         s = get_time_ns();
         csd_proc_edge_loop_dual_queue(buffer, __num_iter);
         e = get_time_ns();
@@ -684,14 +688,14 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters]\n");
 		exit(-1);
 	}
-    char path[50];
-    strcpy(path, argv[1]);
-    strcat(path, "/meta");
+    strcpy(dataset_path, argv[1]);
+    char meta_path[50];
+    sprintf(meta_path, "%s/meta", dataset_path);
     num_csds = atoi(argv[2]);
     int __num_iter = atoi(argv[3]);
 
     // Initialize graph dataset metadata
-    FILE * fin_meta = fopen(path, "r");
+    FILE * fin_meta = fopen(meta_path, "r");
     int tmp[3];
     fscanf(fin_meta, "%d %d %ld %d %d", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
     fclose(fin_meta);

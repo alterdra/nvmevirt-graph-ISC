@@ -19,13 +19,13 @@
 #define FLASH_READ_LATENCY 20000
 
 // In-storage computing
-#define CPU_MCU_SPEED_RATIO 10
+#define CPU_MCU_SPEED_RATIO 2.3
 
 // CSD DRAM Capacity
 #define _KB 1024LL
 #define _MB (_KB * _KB)
 #define _GB (_KB * _KB * _KB)
-#define CSD_DRAM_SIZE (32 * _MB)
+#define CSD_DRAM_SIZE (600 * _MB)
 
 // Cache eviction policy
 // #define CONFIG_CSD_DRAM_LIFO
