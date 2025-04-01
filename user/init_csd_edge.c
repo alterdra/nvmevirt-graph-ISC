@@ -15,6 +15,7 @@
 #include "../core/params.h"
 #include "hmb_mmap.h"
 
+#define PAGE_SIZE  sysconf(_SC_PAGESIZE)
 
 // Virtual devices and file descripters
 int num_csds;
@@ -38,8 +39,7 @@ long long*** edge_blocks_slba;     // edge_blocks_slba[num_partitions][num_parti
 long long*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_partitions][num_csds]
 
 // Aggregation latency
-long long aggregation_read_time = AGG_FLASH_READ_LATENCY;
-long long aggregation_write_time = AGG_FLASH_WRITE_LATENCY;
+long long aggregation_time = AGG_LATENCY;
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -55,7 +55,7 @@ int open_nvme_device(const char *device_path) {
 // Allocates page-aligned buffer for DMA operations
 void *allocate_dma_buffer(size_t size) {
     void *buffer;
-    int ret = posix_memalign(&buffer, getpagesize(), size);
+    int ret = posix_memalign(&buffer, PAGE_SIZE, size);
     if (ret) {
         perror("Failed to allocate aligned buffer");
         return NULL;
@@ -182,7 +182,6 @@ int init_csds_data(int* fd, void *buffer)
     for(int i = 0; i < num_vertices; i++){
         hmb_dev.buf0.virt_addr[i] = 1.0;
     }
-
     for(int c = 0; c < num_partitions; c++){
         for(int r = 0; r < num_partitions; r++){
             for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -212,6 +211,7 @@ int init_csds_data(int* fd, void *buffer)
             offset += buffer_size;
             memset(buffer, 0, buffer_size);
         }
+        fclose(file);
         // Set up edge block base slba for csd i
         // For initializing edge_blocks_slba and edge_blocks_length latter
         edge_block_base_slba[csd_id] = outdegree_slba + offset;
@@ -268,6 +268,7 @@ int init_csds_data(int* fd, void *buffer)
 
                 // printf("Wrote Edge block %d-%d for CSD %d: slba: %d, size: %d, aligned size: %d\n", i, j, csd_id, edge_blocks_slba[i][j][csd_id], edge_blocks_length[i][j][csd_id], offset);
             }
+            fclose(file);
         }
     }
     printf("Wrote %lld edges to CSDs\n", total_edges_saved);
@@ -366,8 +367,8 @@ void conv_partition(size_t partition_id){
     
     // Notify CSD that partition c finish aggregation
     long long num_pages = 4LL * __ceil(end - begin, PAGE_SIZE);
-    long long end_time = get_time_ns() + num_pages * (aggregation_read_time + aggregation_write_time);
-    // printf("Aggregation time span: %lld\n", num_pages * (aggregation_read_time + aggregation_write_time));
+    long long end_time = get_time_ns() + num_pages * (aggregation_time);
+    // printf("Aggregation time span: %lld\n", num_pages * (aggregation_time));
     while(get_time_ns() < end_time);
     hmb_dev.done_partition.virt_addr[partition_id] = true;
 }
@@ -426,6 +427,7 @@ int flush_csd_dram(void* buffer)
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         while(!hmb_dev.done2.virt_addr[csd_id]);
     }
+    return 0;
 }
 
 int csd_proc_edge_loop_normal(void* buffer, int num_iter)
@@ -696,8 +698,8 @@ int main(int argc, char* argv[])
 
     // Initialize graph dataset metadata
     FILE * fin_meta = fopen(meta_path, "r");
-    int tmp[3];
-    fscanf(fin_meta, "%d %d %ld %d %d", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
+    long tmp[3];
+    fscanf(fin_meta, "%ld %d %ld %d %ld", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
     fclose(fin_meta);
     
     // Allocate buffer

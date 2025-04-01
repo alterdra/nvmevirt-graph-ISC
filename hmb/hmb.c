@@ -222,7 +222,7 @@ static int __init hmb_init(void)
         return ret;
     }
 
-    pr_info("HMB: Initialized with 3 256MB and 3 64MB buffers\n");
+    pr_info("HMB: Initialized\n");
     return 0;
 }
 

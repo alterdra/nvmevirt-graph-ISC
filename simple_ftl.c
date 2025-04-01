@@ -116,6 +116,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
 	int* e = storage + task.edge_block_slba / VERTEX_SIZE;
 	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
+	int u = -1, v = -1, id;
 	
 	// Edge block read I/O
 	long long start_time, end_time;
@@ -128,7 +129,6 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 
 	// Process normal values or future values according to iter in the command
 	start_time = ktime_get_ns();
-	int u = -1, v = -1;
 	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
 		u = *e, v = *(e + 1);
 		if(task.iter == 0){
@@ -146,7 +146,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		// usleep_range(10, 20);
 	}
 
-	int id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
+	id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 	if(task.iter == 0)
 		hmb_dev.done1.virt_addr[id] = true;
 	else
@@ -178,69 +178,75 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 	case nvme_cmd_csd_process_edge:
 		{
 			void *vaddr = phys_to_virt(cmd->rw.prp1);
+			struct PROC_EDGE proc_edge_struct;
+			__u64 current_time, finished_time;
+			int csd_flag;
+
 			// NVMEV_INFO("prp1: %llx\n, vaddr: %llx", cmd->rw.prp1, vaddr);
 			if (vaddr == NULL || !virt_addr_valid(vaddr)) {
-				NVMEV_ERROR("Invalid vaddr: %llx\n", vaddr);
+				NVMEV_ERROR("Invalid vaddr: %llx\n", (long long unsigned int)vaddr);
 				return -EFAULT;
 			}
 
 			// Dispatcher
-			struct PROC_EDGE proc_edge_struct;
 			memcpy(&proc_edge_struct, vaddr, sizeof(struct PROC_EDGE));
 			proc_edge_struct.nsid = cmd->rw.nsid - 1;	// For io worker (do_perform_edge_proc) to know the namespace id
 			
 			// NVMEV_INFO("[CSD %d, %s()] [nvme_cmd_csd_proc_edge]\n", proc_edge_struct.csd_id, __func__);
 
 			// Schedule the I/O, get the target I/O complete time
-			__u64 current_time = __get_wallclock();
-			ret->nsecs_target = __schedule_io_units(
-			cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
-			__u64 finished_time = ret->nsecs_target - current_time;
+			current_time = __get_wallclock();
+			ret->nsecs_target = __schedule_io_units(cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
+			finished_time = ret->nsecs_target - current_time;
 			proc_edge_struct.nsecs_target = finished_time;
 			
 			// Fill in the CQ entry
 			// NVMEV_INFO("%s: Fill in CSD_PROC_EDGE CQ Result", __func__);
-			struct nvmev_submission_queue *sq = nvmev_vdev->sqes[sqid];
-			int cqid = sq->cqid;
-			unsigned int command_id = sq_entry(sq_entry).common.command_id;
-			unsigned int status = ret->status;
-			struct nvmev_completion_queue *cq = nvmev_vdev->cqes[cqid];
-			int cq_head = cq->cq_head;
-			struct nvme_completion *cqe = &cq_entry(cq_head);
+			{
+				struct nvmev_submission_queue *sq = nvmev_vdev->sqes[sqid];
+				int cqid = sq->cqid;
+				unsigned int command_id = sq_entry(sq_entry).common.command_id;
+				unsigned int status = ret->status;
+				struct nvmev_completion_queue *cq = nvmev_vdev->cqes[cqid];
+				int cq_head = cq->cq_head;
+				struct nvme_completion *cqe = &cq_entry(cq_head);
 
-			spin_lock(&cq->entry_lock);
-			cqe->command_id = command_id;
-			cqe->sq_id = sqid;
-			cqe->sq_head = sq_entry;
-			cqe->status = cq->phase | (status << 1);
-			// cqe->result0 = result0;
-			// cqe->result1 = result1;
-			if (++cq_head == cq->queue_size) {
-				cq_head = 0;
-				cq->phase = !cq->phase;
+				spin_lock(&cq->entry_lock);
+				cqe->command_id = command_id;
+				cqe->sq_id = sqid;
+				cqe->sq_head = sq_entry;
+				cqe->status = cq->phase | (status << 1);
+				// cqe->result0 = result0;
+				// cqe->result1 = result1;
+				if (++cq_head == cq->queue_size) {
+					cq_head = 0;
+					cq->phase = !cq->phase;
+				}
+				cq->cq_head = cq_head;
+				cq->interrupt_ready = true;
+				spin_unlock(&cq->entry_lock);
 			}
-			cq->cq_head = cq_head;
-			cq->interrupt_ready = true;
-			spin_unlock(&cq->entry_lock);
 
 			// Process CQ entries to support asynchronous
-			int qidx;
-			for (qidx = 1; qidx <= nvmev_vdev->nr_cq; qidx++) {
-				struct nvmev_completion_queue *cq = nvmev_vdev->cqes[qidx];
-				if (cq == NULL || !cq->irq_enabled)
-					continue;
-				// NVMEV_INFO("IRQ for CQ entry");
-				if (mutex_trylock(&cq->irq_lock)) {
-					if (cq->interrupt_ready == true) {
-						cq->interrupt_ready = false;
-						nvmev_signal_irq(cq->irq_vector);
+			{
+				int qidx;
+				for (qidx = 1; qidx <= nvmev_vdev->nr_cq; qidx++) {
+					struct nvmev_completion_queue *cq = nvmev_vdev->cqes[qidx];
+					if (cq == NULL || !cq->irq_enabled)
+						continue;
+					// NVMEV_INFO("IRQ for CQ entry");
+					if (mutex_trylock(&cq->irq_lock)) {
+						if (cq->interrupt_ready == true) {
+							cq->interrupt_ready = false;
+							nvmev_signal_irq(cq->irq_vector);
+						}
+						mutex_unlock(&cq->irq_lock);
 					}
-					mutex_unlock(&cq->irq_lock);
 				}
 			}
 
 			// Synchronously process the edge processing command
-			int csd_flag = cmd->rw.apptag;
+			csd_flag = cmd->rw.apptag;
 			if(csd_flag == SYNC){
 				__do_perform_edge_proc_grafu(proc_edge_struct);
 			}
