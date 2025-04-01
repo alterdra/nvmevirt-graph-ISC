@@ -11,6 +11,18 @@ fi
 if lsmod | grep -q nvmev3; then
     sudo rmmod nvmev3
 fi
+if lsmod | grep -q nvmev4; then
+    sudo rmmod nvmev4
+fi
+if lsmod | grep -q nvmev5; then
+    sudo rmmod nvmev5
+fi
+if lsmod | grep -q nvmev6; then
+    sudo rmmod nvmev6
+fi
+if lsmod | grep -q nvmev7; then
+    sudo rmmod nvmev7
+fi
 if lsmod | grep -q hmb; then
     sudo rmmod hmb
 fi
@@ -35,16 +47,28 @@ for ID in `seq 0 $((number_of_CSDs - 1))`; do
     echo "Loading nvmev${ID}..."
     case $ID in
         0)
-            sudo insmod nvmev0.ko memmap_start=128G memmap_size=10G cpus=1,2
+            sudo insmod nvmev0.ko memmap_start=128G memmap_size=30G cpus=1,2
             ;;
         1)
-            sudo insmod nvmev1.ko memmap_start=138G memmap_size=10G cpus=3,4
+            sudo insmod nvmev1.ko memmap_start=158G memmap_size=30G cpus=3,4
             ;;
         2)
-            sudo insmod nvmev2.ko memmap_start=148G memmap_size=10G cpus=5,6
+            sudo insmod nvmev2.ko memmap_start=188G memmap_size=30G cpus=5,6
             ;;
         3)
-            sudo insmod nvmev3.ko memmap_start=158G memmap_size=10G cpus=7,8
+            sudo insmod nvmev3.ko memmap_start=218G memmap_size=30G cpus=7,8
+            ;;
+        4)
+            sudo insmod nvmev4.ko memmap_start=248G memmap_size=30G cpus=9,10
+            ;;
+        5)
+            sudo insmod nvmev5.ko memmap_start=278G memmap_size=30G cpus=11,12
+            ;;
+        6)
+            sudo insmod nvmev6.ko memmap_start=308G memmap_size=30G cpus=13,14
+            ;;
+        7)
+            sudo insmod nvmev7.ko memmap_start=338G memmap_size=30G cpus=15,16
             ;;
     esac
 done

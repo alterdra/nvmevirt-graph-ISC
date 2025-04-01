@@ -19,7 +19,8 @@
 #include "dma.h"
 
 #include "core/queue.h"
-#include "core/csd_dram.h"
+#include "core/csd_edge_buffer.h"
+#include "core/csd_vertex_buffer.h"
 #include "core/params.h"
 #include <hmb.h>
 

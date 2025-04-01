@@ -9,7 +9,8 @@
 
 #include "nvme.h"
 #include "core/queue.h"
-#include "core/csd_dram.h"
+#include "core/csd_edge_buffer.h"
+#include "core/csd_vertex_buffer.h"
 
 #define CONFIG_NVMEV_IO_WORKER_BY_SQ
 #undef CONFIG_NVMEV_FAST_X86_IRQ_HANDLING
@@ -257,6 +258,7 @@ struct nvmev_dev {
 
 	// CSD DRAM
 	struct edge_buffer edge_buf;
+	struct vertex_buffer vertex_buf;
 
 	unsigned int mdts;
 

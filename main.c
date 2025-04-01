@@ -25,7 +25,7 @@
 
 // Graph Processing
 #include "core/queue.h"
-#include "core/csd_dram.h"
+#include "core/csd_edge_buffer.h"
 #include "core/params.h"
 
 /****************************************************************
@@ -81,6 +81,13 @@ static unsigned int io_unit_shift = 12;
 static char *cpus;
 static unsigned int debug = 0;
 
+// Graph processing
+char *cache_eviction_policy = "FIFO";
+int partial_edge_eviction = false;
+int invalidation_at_future_value = false;
+unsigned long edge_buffer_size = __LONG_MAX__;
+unsigned long vertex_buffer_size = __LONG_MAX__;
+
 int io_using_dma = false;
 
 static int set_parse_mem_param(const char *val, const struct kernel_param *kp)
@@ -118,6 +125,14 @@ MODULE_PARM_DESC(io_unit_shift, "Size of each I/O unit (2^)");
 module_param(cpus, charp, 0444);
 MODULE_PARM_DESC(cpus, "CPU list for process, completion(int.) threads, Seperated by Comma(,)");
 module_param(debug, uint, 0644);
+
+// Graph processing
+module_param(cache_eviction_policy, charp, 0444);
+MODULE_PARM_DESC(cache_eviction_policy, "Cache eviction policy (FIFO/LIFO/LRU)");
+module_param(partial_edge_eviction, uint, 0444);
+module_param(invalidation_at_future_value, uint, 0444);
+module_param_cb(edge_buffer_size, &ops_parse_mem_param, &edge_buffer_size, 0444);
+module_param_cb(vertex_buffer_size, &ops_parse_mem_param, &vertex_buffer_size, 0444);
 
 // Returns true if an event is processed
 static bool nvmev_proc_dbs(void)

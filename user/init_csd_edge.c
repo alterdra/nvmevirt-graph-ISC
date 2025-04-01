@@ -21,7 +21,10 @@
 int num_csds;
 // const char device[MAX_NUM_CSDS][20] = {"/dev/nvmen1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
 // imdt
-const char device[MAX_NUM_CSDS][20] = {"/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1"};
+const char device[MAX_NUM_CSDS][20] = {
+    "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
+    "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
+};
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal

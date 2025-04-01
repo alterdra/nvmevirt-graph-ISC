@@ -550,6 +550,14 @@ struct nvme_ctrl_regs {
 #define NVMEV_PCI_BUS_NUM 0x03
 #elif (VIRT_ID == 3)
 #define NVMEV_PCI_BUS_NUM 0x04
+#elif (VIRT_ID == 4)
+#define NVMEV_PCI_BUS_NUM 0x05
+#elif (VIRT_ID == 5)
+#define NVMEV_PCI_BUS_NUM 0x06
+#elif (VIRT_ID == 6)
+#define NVMEV_PCI_BUS_NUM 0x07
+#elif (VIRT_ID == 7)
+#define NVMEV_PCI_BUS_NUM 0x08
 #else
 #define NVMEV_PCI_BUS_NUM 0x10
 #endif

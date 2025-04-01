@@ -1,11 +1,11 @@
-#include "csd_dram.h"
+#include "csd_edge_buffer.h"
 
 void edge_buffer_init(struct edge_buffer *buf)
 {
     INIT_LIST_HEAD(&buf->head);
     mutex_init(&buf->lock);
     buf->size = 0;
-    buf->capacity = CSD_DRAM_SIZE;
+    buf->capacity = edge_buffer_size;
     buf->hit_cnt = buf->total_access_cnt = 0;
 }
 
@@ -49,9 +49,9 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
     }
     // Partial (or full) edge block in cache, must be list head for FVC access pattern
     else{
-#ifdef CONFIG_PARTIAL_EDGE_EVICTION
-        evict_edge_block(buf, size - curr_size);
-#endif
+        if(partial_edge_eviction){
+            evict_edge_block(buf, size - curr_size);
+        }
         buf->hit_cnt += curr_size / PAGE_SIZE;
         buf->total_access_cnt += size / PAGE_SIZE;
         // printk(KERN_INFO "Cache hit Processing edge-block-%u-%u, size: %lld", r, c, size);
@@ -66,31 +66,32 @@ void evict_edge_block(struct edge_buffer *buf, long long size)
     while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
     {
 
-#ifdef CONFIG_CSD_DRAM_LIFO
-        unit = list_last_entry(&buf->head, struct edge_buffer_unit, list);
-#endif
-#ifdef CONFIG_CSD_DRAM_FIFO
-        unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
-#endif
+        if(strcmp(cache_eviction_policy, "LIFO")){
+            unit = list_last_entry(&buf->head, struct edge_buffer_unit, list);
+        }
+        else if(strcmp(cache_eviction_policy, "FIFO")){
+            unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
+        }
 
-#ifdef CONFIG_PARTIAL_EDGE_EVICTION
-        if(buf->size - unit->size + size >= buf->capacity){
+        if(partial_edge_eviction){
+            if(buf->size - unit->size + size >= buf->capacity){
+                buf->size -= unit->size;
+                list_del(&unit->list);
+                kfree(unit);
+            }
+            else{
+                // Partial evict the edge block
+                long long diff = buf->size + size - buf->capacity;
+                unit->size -= diff;
+                buf->size -= diff;
+                break;
+            }
+        }
+        else{
             buf->size -= unit->size;
             list_del(&unit->list);
             kfree(unit);
         }
-        else{
-            // Partial evict the edge block
-            long long diff = buf->size + size - buf->capacity;
-            unit->size -= diff;
-            buf->size -= diff;
-            break;
-        }
-#else
-        buf->size -= unit->size;
-        list_del(&unit->list);
-        kfree(unit);
-#endif
     }
 }
 
