@@ -628,8 +628,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -689,8 +689,8 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
 
 int main(int argc, char* argv[]) 
 {
-    if (argc<4) {
-		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters]\n");
+    if (argc<5) {
+		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters] [aggregation_time]\n");
 		exit(-1);
 	}
     strcpy(dataset_path, argv[1]);
@@ -698,6 +698,7 @@ int main(int argc, char* argv[])
     sprintf(meta_path, "%s/meta", dataset_path);
     num_csds = atoi(argv[2]);
     int __num_iter = atoi(argv[3]);
+    aggregation_time = atoi(argv[4]);
 
     // Initialize graph dataset metadata
     FILE * fin_meta = fopen(meta_path, "r");
@@ -727,7 +728,7 @@ int main(int argc, char* argv[])
     }
     printf("HMB initialized successfully\n");
 
-    printf("Num iter: %d\n", __num_iter);
+    printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
     // run_normal_grafu_dq(buffer, __num_iter);
     run_dq_cache_hitrate(buffer, __num_iter);

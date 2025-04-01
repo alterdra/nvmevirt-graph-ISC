@@ -116,6 +116,7 @@ void __do_perform_edge_proc(void)
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 	struct queue *future_task_queue = &(nvmev_vdev->future_task_queue);
 	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
+	extern int invalidation_at_future_value;
 
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
@@ -171,10 +172,10 @@ void __do_perform_edge_proc(void)
 			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
-        	invalidate_edge_block(edge_buf, task.r, task.c);
-			// invalidate_edge_block_fifo(edge_buf);
-#endif
+			if(invalidation_at_future_value){
+        		invalidate_edge_block(edge_buf, task.r, task.c);
+				// invalidate_edge_block_fifo(edge_buf);
+			}
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
@@ -200,10 +201,11 @@ void __do_perform_edge_proc(void)
 			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 			
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
-#ifdef CONFIG_INVALIDATION_AT_FUTURE_VALUE
-			if(task.iter == 0 && task.r > task.c)	// lower triangle
-        		invalidate_edge_block(edge_buf, task.r, task.c);
-#endif
+			if(invalidation_at_future_value){
+        		if(task.iter == 0 && task.r > task.c)	// lower triangle
+        			invalidate_edge_block(edge_buf, task.r, task.c);
+			}
+
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));

@@ -1,80 +1,62 @@
 #!/bin/bash
-if lsmod | grep -q nvmev0; then
-    sudo rmmod nvmev0
-fi
-if lsmod | grep -q nvmev1; then
-    sudo rmmod nvmev1
-fi
-if lsmod | grep -q nvmev2; then
-    sudo rmmod nvmev2
-fi
-if lsmod | grep -q nvmev3; then
-    sudo rmmod nvmev3
-fi
-if lsmod | grep -q nvmev4; then
-    sudo rmmod nvmev4
-fi
-if lsmod | grep -q nvmev5; then
-    sudo rmmod nvmev5
-fi
-if lsmod | grep -q nvmev6; then
-    sudo rmmod nvmev6
-fi
-if lsmod | grep -q nvmev7; then
-    sudo rmmod nvmev7
-fi
-if lsmod | grep -q hmb; then
-    sudo rmmod hmb
-fi
 
-
-make clean
-
-number_of_CSDs=$1
-echo "Number of CSDs: ${number_of_CSDs}"
-
-# Loop for IDs 0 and 1
-for ID in `seq 0 $((number_of_CSDs - 1))`; do
-    echo "Building nvmev${ID}..."
-    make ID=$ID || exit
-
-    # Only load HMB once, before the first module
-    if [ $ID -eq 0 ]; then
-        echo "Load HMB kernel module..."
-        sudo insmod hmb/hmb.ko
+# Unload existing kernel modules dynamically
+modules=("nvmev0" "nvmev1" "nvmev2" "nvmev3" "nvmev4" "nvmev5" "nvmev6" "nvmev7" "hmb")
+for module in "${modules[@]}"; do
+    if lsmod | grep -q "$module"; then
+        echo "Removing $module..."
+        sudo rmmod "$module"
     fi
+done
 
-    echo "Loading nvmev${ID}..."
-    case $ID in
-        0)
-            sudo insmod nvmev0.ko memmap_start=128G memmap_size=30G cpus=1,2
-            ;;
-        1)
-            sudo insmod nvmev1.ko memmap_start=158G memmap_size=30G cpus=3,4
-            ;;
-        2)
-            sudo insmod nvmev2.ko memmap_start=188G memmap_size=30G cpus=5,6
-            ;;
-        3)
-            sudo insmod nvmev3.ko memmap_start=218G memmap_size=30G cpus=7,8
-            ;;
-        4)
-            sudo insmod nvmev4.ko memmap_start=248G memmap_size=30G cpus=9,10
-            ;;
-        5)
-            sudo insmod nvmev5.ko memmap_start=278G memmap_size=30G cpus=11,12
-            ;;
-        6)
-            sudo insmod nvmev6.ko memmap_start=308G memmap_size=30G cpus=13,14
-            ;;
-        7)
-            sudo insmod nvmev7.ko memmap_start=338G memmap_size=30G cpus=15,16
-            ;;
+# Parse command-line options
+while getopts n:c:p:i:e:v: flag; do
+    case "${flag}" in
+        n) num_csds=${OPTARG};;  # Number of CSDs
+        c) cache_eviction_policy=${OPTARG};;  # Cache policy (FIFO, LRU, etc.)
+        p) partial_edge_eviction=${OPTARG};;  # Partial edge eviction flag
+        i) invalidation_at_future_value=${OPTARG};; 
+        e) edge_buffer_size=${OPTARG};;  # Edge buffer size
+        v) vertex_buffer_size=${OPTARG};;  # Vertex buffer size
     esac
 done
 
-# sudo cat /proc/iomem
-# Checking valid System RAM
+# Shift processed options, so $1 is the first positional argument
+shift $((OPTIND - 1))
 
-# sudo ./init_csd_edge ../LiveJournal.pl 2 10
+# Default number of CSDs if not provided
+num_csds=${num_csds:-4}
 
+echo "Number of CSDs: ${num_csds}"
+
+# Clean and rebuild modules
+make clean
+
+# Define memory mappings for each module
+memmap_start=("128G" "158G" "188G" "218G" "248G" "278G" "308G" "338G")
+memmap_size=("30G" "30G" "30G" "30G" "30G" "30G" "30G" "30G")
+cpus=("1,2" "3,4" "5,6" "7,8" "9,10" "11,12" "13,14" "15,16")
+
+# Loop to build and load kernel modules
+for ID in $(seq 0 $((num_csds - 1))); do
+    echo "Building nvmev${ID}..."
+    make ID=$ID || exit
+
+    # Load HMB module before first nvmev module
+    if [ $ID -eq 0 ]; then
+        echo "Loading HMB kernel module..."
+        sudo insmod hmb/hmb.ko
+    fi
+
+    # Construct optional parameters dynamically
+    module_params=""
+    [ -n "$cache_eviction_policy" ] && module_params+=" cache_eviction_policy=$cache_eviction_policy"
+    [ -n "$partial_edge_eviction" ] && module_params+=" partial_edge_eviction=$partial_edge_eviction"
+    [ -n "$invalidation_at_future_value" ] && module_params+=" invalidation_at_future_value=$invalidation_at_future_value"
+    [ -n "$edge_buffer_size" ] && module_params+=" edge_buffer_size=$edge_buffer_size"
+    [ -n "$vertex_buffer_size" ] && module_params+=" vertex_buffer_size=$vertex_buffer_size"
+
+    # Load nvmev module
+    echo "Loading nvmev${ID} with params: memmap_start=${memmap_start[$ID]} memmap_size=${memmap_size[$ID]} cpus=${cpus[$ID]} $module_params"
+    sudo insmod nvmev${ID}.ko memmap_start=${memmap_start[$ID]} memmap_size=${memmap_size[$ID]} cpus=${cpus[$ID]} $module_params
+done

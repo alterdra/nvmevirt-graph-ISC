@@ -7,6 +7,11 @@ void edge_buffer_init(struct edge_buffer *buf)
     buf->size = 0;
     buf->capacity = edge_buffer_size;
     buf->hit_cnt = buf->total_access_cnt = 0;
+
+    printk(KERN_INFO "Edge buffer size: %lld", buf->capacity);
+    printk(KERN_INFO "Cache eviction policy: %s", cache_eviction_policy);
+    printk(KERN_INFO "Partial eviction?: %d", partial_edge_eviction);
+    printk(KERN_INFO "Invalidation at future value?: %d", partial_edge_eviction);
 }
 
 void edge_buffer_destroy(struct edge_buffer *buf)
@@ -66,10 +71,13 @@ void evict_edge_block(struct edge_buffer *buf, long long size)
     while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
     {
 
-        if(strcmp(cache_eviction_policy, "LIFO")){
+        if(strcmp(cache_eviction_policy, "LIFO") == 0){
             unit = list_last_entry(&buf->head, struct edge_buffer_unit, list);
         }
-        else if(strcmp(cache_eviction_policy, "FIFO")){
+        else if(strcmp(cache_eviction_policy, "FIFO") == 0){
+            unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
+        }
+        else{
             unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
         }
 
