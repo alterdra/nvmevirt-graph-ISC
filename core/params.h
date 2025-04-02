@@ -27,7 +27,7 @@
 
 // Cache eviction policy
 // #define CONFIG_CSD_DRAM_LIFO
-#define CONFIG_CSD_DRAM_FIFO
+// #define CONFIG_CSD_DRAM_FIFO
 // #define CONFIG_CSD_DRAM_NO_EVICTION
 
 // #define CONFIG_PARTIAL_EDGE_EVICTION

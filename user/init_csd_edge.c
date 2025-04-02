@@ -478,17 +478,18 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                             cleanup(buffer);
                             return -1;
                         }
-                        if(r < c && iter != num_iter - 1){
+                    }
+                    aggr_edge_block(r, c, true);
+                    if(r < c && iter != num_iter - 1){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
                             ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
                             }
                         }
-                    }
-                    aggr_edge_block(r, c, true);
-                    if(r < c && iter != num_iter - 1)
                         aggr_edge_block(r, c, false);
+                    }
                 }
                 conv_partition(c);
 
@@ -505,12 +506,14 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                 }
 
                 // Aggregate future values
-                size_t begin, end;
-                get_partition_range(c, &begin, &end);
-                for(size_t v = begin; v < end; v++){
-                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
-                        hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                if(iter != num_iter - 1){
+                    size_t begin, end;
+                    get_partition_range(c, &begin, &end);
+                    for(size_t v = begin; v < end; v++){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
+                            hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                        }
                     }
                 }
             }
@@ -526,27 +529,30 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                             cleanup(buffer);
                             return -1;
                         }
-                        if(iter != num_iter - 1){
+                    }
+                    aggr_edge_block(r, c, true);
+                    if(iter != num_iter - 1){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
                             ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
                             }
                         }
-                    }
-                    aggr_edge_block(r, c, true);
-                    if(iter != num_iter - 1)
                         aggr_edge_block(r, c, false);
+                    }
                 }
                 conv_partition(c);
 
                 // Aggregate future values
-                size_t begin, end;
-                get_partition_range(c, &begin, &end);
-                for(size_t v = begin; v < end; v++){
-                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
-                        hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                if(iter != num_iter - 1){
+                    size_t begin, end;
+                    get_partition_range(c, &begin, &end);
+                    for(size_t v = begin; v < end; v++){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            hmb_dev.buf2.virt_addr[v] += hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices];
+                            hmb_dev.buf2.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                        }
                     }
                 }
             }
@@ -730,8 +736,8 @@ int main(int argc, char* argv[])
 
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
-    // run_normal_grafu_dq(buffer, __num_iter);
-    run_dq_cache_hitrate(buffer, __num_iter);
+    run_normal_grafu_dq(buffer, __num_iter);
+    // run_dq_cache_hitrate(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;
