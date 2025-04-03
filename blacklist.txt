@@ -1,0 +1,11 @@
+sudo tee /etc/modprobe.d/blacklist-nvmev.conf << EOF
+# Blacklist nvmev0 and hmb modules to prevent kernel panics
+blacklist nvmev0
+blacklist hmb
+# Also prevent auto-loading via dependencies
+install nvmev0 /bin/false
+install hmb /bin/false
+EOF
+
+
+sudo find / -xdev -type f -size +100M -exec du -h {} + | sort -rh

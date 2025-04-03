@@ -40,7 +40,7 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
         evict_edge_block(buf, size);
         unit = kmalloc(sizeof(struct edge_buffer_unit), GFP_KERNEL);
         if (!unit) {
-            pr_err("Failed to allocate memory for new csd dram unit\n");
+            pr_err("Failed to allocate memory for new csd edge buffer unit\n");
             return -1;
         }
         unit->r = r;

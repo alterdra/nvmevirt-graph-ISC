@@ -88,11 +88,12 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	
 	// Process the edges
 	long long start_time, end_time;
+	long long hmb_offset = (long long)(csd_id + 1)* num_vertices;
 	int u = -1, v = -1, id;
 	start_time = ktime_get_ns();
 	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
 		u = *e, v = *(e + 1);
-		dst[v + (long long)(csd_id + 1)* num_vertices] += src[u] / outdegree[u];
+		dst[v + hmb_offset] += src[u] / outdegree[u];
 	}
 	end_time = ktime_get_ns();
 

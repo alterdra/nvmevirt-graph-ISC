@@ -294,7 +294,7 @@ long long get_time_ns() {
 }
 
 // Graph processing utility functions
-int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_sync)
+int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_sync, int is_fvc)
 {
     struct nvme_user_io io;
     int ret;
@@ -305,6 +305,7 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_syn
         .edge_block_len = edge_blocks_length[r][c][csd_id],
         .iter = iter,
         .num_iters = num_iters,
+        .is_fvc = is_fvc,
         .r = r, .c = c, .csd_id = csd_id,
         .num_partitions = num_partitions,
         .num_csds = num_csds,
@@ -421,7 +422,7 @@ int flush_csd_dram(void* buffer)
     int ret;
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         hmb_dev.done2.virt_addr[csd_id] = false;
-        ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM);
+        ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM, false);
         if(ret < 0){
             cleanup(buffer);
             return -1;
@@ -440,7 +441,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
+                    ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -473,7 +474,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(iter > 0 && c < r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -482,7 +483,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(r < c && iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, true);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -496,7 +497,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                 // Diagnonal edge block
                 if(iter != num_iter - 1){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(c, c, csd_id, 1, num_iter, SYNC);
+                        ret = send_proc_edge(c, c, csd_id, iter, num_iter, SYNC, true);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -524,7 +525,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(c >= r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, 0, num_iter, SYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -533,7 +534,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, 1, num_iter, SYNC);
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, true);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -582,7 +583,7 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -607,7 +608,7 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;

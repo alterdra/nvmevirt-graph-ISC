@@ -20,12 +20,13 @@ struct vertex_buffer {
     long long total_access_cnt, hit_cnt;
 };
 
+extern unsigned long vertex_buffer_size;
+
 void vertex_buffer_init(struct vertex_buffer *buf);
 void vertex_buffer_destroy(struct vertex_buffer *buf);
 
 long long access_partition(struct vertex_buffer *buf, int pid, int version, long long size);
 void evict_partition(struct vertex_buffer *buf, long long size);
-void invalidate_partition(struct vertex_buffer *buf, int r, int c);
 long long get_partition_size(struct vertex_buffer *buf, int pid, int version);
 
 #endif

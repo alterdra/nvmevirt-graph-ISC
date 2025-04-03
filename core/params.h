@@ -15,6 +15,7 @@
 // Latency in us
 #define AGG_LATENCY 20000       // DMA write
 #define FLASH_READ_LATENCY 20000
+#define FLASH_WRITE_LATENCY 350000
 
 // In-storage computing
 #define CPU_MCU_SPEED_RATIO 2.3

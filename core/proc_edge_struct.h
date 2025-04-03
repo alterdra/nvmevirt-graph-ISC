@@ -12,6 +12,7 @@ struct PROC_EDGE
     __u64 edge_block_slba; 
     __u64 edge_block_len; 
     __u32 iter, num_iters;
+    __u32 is_fvc;
 
     __u32 nsid;     // Namespace id, used by kernel module
 
