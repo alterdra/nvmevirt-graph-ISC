@@ -132,12 +132,14 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 	ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
+	// NVMEV_INFO("Edge-%d-%d I/O time: %lld", task.r, task.c, (long long) (task.nsecs_target * ratio));
 	while(ktime_get_ns() < end_time);
 
 	// Vertex parition read I/O
 	partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 	size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
 	end_time = ktime_get_ns() + (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE;
+	// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE);
 	while(ktime_get_ns() < end_time);
 
 	// Initialize vertex source and destination addresses
@@ -165,7 +167,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	}
 
 	id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
-	if(task.iter == 0)
+	if(task.is_fvc == 0)
 		hmb_dev.done1.virt_addr[id] = true;
 	else
 		hmb_dev.done2.virt_addr[id] = true;

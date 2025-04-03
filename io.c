@@ -117,6 +117,7 @@ void __do_perform_edge_proc(void)
 	struct queue *normal_task_queue = &(nvmev_vdev->normal_task_queue);
 	struct queue *future_task_queue = &(nvmev_vdev->future_task_queue);
 	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
+	struct vertex_buffer *vertex_buf = &nvmev_vdev->vertex_buf;
 	extern int invalidation_at_future_value;
 
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
@@ -165,13 +166,15 @@ void __do_perform_edge_proc(void)
 		
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
-			long long size_not_in_cache;
+			long long end_time, size_not_in_cache;
 			double ratio;
-			long long end_time;
+			long long partition_size;
+			int num_vertices = task.num_vertices;
 
 			queue_dequeue(future_task_queue, &task);
 			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 
+			// Edge I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 			if(invalidation_at_future_value){
         		invalidate_edge_block(edge_buf, task.r, task.c);
@@ -180,9 +183,11 @@ void __do_perform_edge_proc(void)
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
-			while(ktime_get_ns() < end_time){
-				// usleep_range(10, 20);
-			}
+			while(ktime_get_ns() < end_time);
+
+			// Vertex parition aggregate to CSD vertex buffer
+			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
+			size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
 
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 
@@ -194,25 +199,31 @@ void __do_perform_edge_proc(void)
 		}
 		else if(get_queue_size(normal_task_queue))
 		{
-			long long size_not_in_cache;
+			long long end_time, size_not_in_cache;
 			double ratio;
-			long long end_time;
+			long long partition_size;
+			int num_vertices = task.num_vertices;
 
 			queue_dequeue(normal_task_queue, &task);
 			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 			
+			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 			if(invalidation_at_future_value){
         		if(task.iter == 0 && task.r > task.c)	// lower triangle
         			invalidate_edge_block(edge_buf, task.r, task.c);
 			}
-
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
-			while(ktime_get_ns() < end_time){
-				// usleep_range(10, 20);
-			}
+			while(ktime_get_ns() < end_time);
+
+			// Vertex parition read I/O
+			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
+			size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
+			end_time = ktime_get_ns() + (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE;
+			// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE);
+			while(ktime_get_ns() < end_time);
 
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
 			

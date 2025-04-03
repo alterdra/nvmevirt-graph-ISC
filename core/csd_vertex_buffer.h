@@ -5,6 +5,7 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
+#include <linux/ktime.h>
 #include "params.h"
 
 struct vertex_buffer_unit {
