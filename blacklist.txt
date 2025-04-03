@@ -1,11 +1,27 @@
 sudo tee /etc/modprobe.d/blacklist-nvmev.conf << EOF
-# Blacklist nvmev0 and hmb modules to prevent kernel panics
+# Blacklist nvmev0 through nvmev7 and hmb modules to prevent kernel panics
 blacklist nvmev0
+blacklist nvmev1
+blacklist nvmev2
+blacklist nvmev3
+blacklist nvmev4
+blacklist nvmev5
+blacklist nvmev6
+blacklist nvmev7
 blacklist hmb
 # Also prevent auto-loading via dependencies
 install nvmev0 /bin/false
+install nvmev1 /bin/false
+install nvmev2 /bin/false
+install nvmev3 /bin/false
+install nvmev4 /bin/false
+install nvmev5 /bin/false
+install nvmev6 /bin/false
+install nvmev7 /bin/false
 install hmb /bin/false
 EOF
+
+cat /etc/modprobe.d/blacklist-nvmev.conf
 
 
 sudo find / -xdev -type f -size +100M -exec du -h {} + | sort -rh

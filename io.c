@@ -172,7 +172,6 @@ void __do_perform_edge_proc(void)
 			int num_vertices = task.num_vertices;
 
 			queue_dequeue(future_task_queue, &task);
-			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Future", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
 
 			// Edge I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
@@ -182,7 +181,7 @@ void __do_perform_edge_proc(void)
 			}
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time);
 
 			// Vertex parition aggregate to CSD vertex buffer
@@ -205,8 +204,7 @@ void __do_perform_edge_proc(void)
 			int num_vertices = task.num_vertices;
 
 			queue_dequeue(normal_task_queue, &task);
-			// NVMEV_INFO("[CSD %d, %s()]: Processing edge-block-%u-%u with size: %lld (iter: %d), Normal", task.csd_id, __func__, task.r, task.c, task.edge_block_len, task.iter);
-			
+
 			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 			if(invalidation_at_future_value){
@@ -215,7 +213,7 @@ void __do_perform_edge_proc(void)
 			}
 			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time);
 
 			// Vertex parition read I/O
