@@ -186,7 +186,7 @@ void __do_perform_edge_proc(void)
 
 			// Vertex parition aggregate to CSD vertex buffer
 			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
-			size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
+			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
 
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 
@@ -216,11 +216,11 @@ void __do_perform_edge_proc(void)
 			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time);
 
-			// Vertex parition read I/O
+			// Vertex parition DMA read
 			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
-			size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
-			end_time = ktime_get_ns() + (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE;
-			// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE);
+			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
+			end_time = ktime_get_ns() + (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE;
+			// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE);
 			while(ktime_get_ns() < end_time);
 
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);

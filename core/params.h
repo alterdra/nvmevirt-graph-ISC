@@ -13,9 +13,9 @@
 #define EDGE_SIZE 8
 
 // Latency in us
-#define AGG_LATENCY 20000       // DMA write
-#define FLASH_READ_LATENCY 20000
-#define FLASH_WRITE_LATENCY 350000
+#define AGG_LATENCY 100       // DMA write
+#define DMA_READ_LATENCY 0
+#define FLASH_READ_LATENCY 100
 
 // In-storage computing
 #define CPU_MCU_SPEED_RATIO 2.3

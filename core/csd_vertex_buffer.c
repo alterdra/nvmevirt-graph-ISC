@@ -63,14 +63,6 @@ void evict_partition(struct vertex_buffer *buf, long long size)
     while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
     {
         unit = list_first_entry(&buf->head, struct vertex_buffer_unit, list);
-
-        // Flash write on eviction
-        {
-            // long long end_time = ktime_get_ns() + (long long) FLASH_WRITE_LATENCY * unit->size / PAGE_SIZE;
-            // printk(KERN_INFO "Vertex flash write time: %lld, pid: %d, version: %d", (long long) FLASH_WRITE_LATENCY * unit->size / PAGE_SIZE, unit->pid, unit->version);
-            // while(ktime_get_ns() < end_time);
-        }
-
         buf->size -= unit->size;
         list_del(&unit->list);
         kfree(unit);

@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Ex: bash test_scalibity.sh LiveJournal.pl 25 526M 18M
+# Ex: bash test_scalibity.sh LiveJournal.pl 50 526M 18M
+# Ex: bash test_scalibity.sh Twitter-2010.pl 50 11G 160M
+# Ex: bash test_scalibity.sh Friendster.pl  50 14G 250M
+# Ex: bash test_scalibity.sh Uk-2007.pl  50 30G 414M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -68,5 +71,7 @@ for num_csd in 1 2 4 8; do
         aggr_latency=20000
     fi
 
-    sudo ./user/init_csd_edge $dataset_path $num_csd 10 $aggr_latency >> experiments/aggr_${dataset_path}_${x_percentage}.txt
+    sudo ./user/init_csd_edge $dataset_path $num_csd 10 $aggr_latency >> experiments/scaling_${dataset_path}_${x_percentage}.txt
+    # printf "\n" >> experiments/scaling_${dataset_path}_${x_percentage}.txt
+
 done

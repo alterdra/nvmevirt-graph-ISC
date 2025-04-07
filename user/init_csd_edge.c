@@ -483,7 +483,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(r < c && iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, true);
+                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -497,7 +497,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                 // Diagnonal edge block
                 if(iter != num_iter - 1){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(c, c, csd_id, iter, num_iter, SYNC, true);
+                        ret = send_proc_edge(c, c, csd_id, iter + 1, num_iter, SYNC, true);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -534,7 +534,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, true);
+                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;

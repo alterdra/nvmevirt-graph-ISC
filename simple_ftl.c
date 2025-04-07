@@ -137,9 +137,9 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 
 	// Vertex parition read I/O
 	partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
-	size_not_in_cache = access_partition(vertex_buf, task.c, task.iter, partition_size);
-	end_time = ktime_get_ns() + (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE;
-	// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) nvmev_vdev->config.read_time * size_not_in_cache / PAGE_SIZE);
+	size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
+	end_time = ktime_get_ns() + (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE;
+	// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE);
 	while(ktime_get_ns() < end_time);
 
 	// Initialize vertex source and destination addresses
