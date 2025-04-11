@@ -51,8 +51,8 @@ long long access_partition(struct vertex_buffer *buf, int pid, int version, long
     }
     else{
         buf->hit_cnt += curr_size / PAGE_SIZE;
-        buf->total_access_cnt += size / PAGE_SIZE;
-        return size - curr_size;
+        buf->total_access_cnt += curr_size / PAGE_SIZE;
+        return 0;
     }
 }
 

@@ -19,7 +19,7 @@
 
 // Virtual devices and file descripters
 int num_csds;
-// const char device[MAX_NUM_CSDS][20] = {"/dev/nvmen1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
+// const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
 // imdt
 const char device[MAX_NUM_CSDS][20] = {
     "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",

@@ -1,6 +1,9 @@
 #!/bin/bash
 
-# Ex: bash test_aggr.sh Twitter-2010.pl 25 11G
+# Ex: bash test_aggr.sh LiveJournal.pl 3 526M 18M
+# Ex: bash test_aggr.sh Twitter-2010.pl 1 11G 160M
+# Ex: bash test_aggr.sh Friendster.pl  1 14G 250M
+# Ex: bash test_aggr.sh Uk-2007.pl  1 30G 414M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -27,44 +30,50 @@ convert_to_human() {
     fi
 }
 
-num_csd=8
+num_csd=2
 num_iter=10
 
 dataset_path=$1
 x_percentage=$2
 edge_size_human=$3
+vertex_size_human=$4
 
 edge_size=$(convert_to_bytes $edge_size_human)
+vertex_size=$(convert_to_bytes $vertex_size_human)
 x_decimal=$(echo "scale=4; $x_percentage / 100" | bc | sed 's/^\./0./')
 
-edge_alloc=$(echo "scale=4; $edge_size * $x_decimal / $num_csd" | bc)
+edge_alloc=$(echo "scale=4; $edge_size * $x_decimal" | bc)
 edge_alloc=$(echo "$edge_alloc" | awk '{print int($1)}')
 edge_alloc_human=$(convert_to_human $edge_alloc)
+
+vertex_alloc=$(echo "scale=4; $vertex_size * 2 * $x_decimal" | bc)
+vertex_alloc=$(echo "$vertex_alloc" | awk '{print int($1)}')
+vertex_alloc_human=$(convert_to_human $vertex_alloc)
+
+num_partition=$(awk 'NR==1{print $4}' "$dataset_path/meta")
+echo "Number of partitions: $num_partition"
+output_path="experiments/aggr_${dataset_path}_${x_percentage}%_p${num_partition}.txt"
+
+cd user
+make
+cd ..
 
 # 20000 40000 80000 160000 320000
 
 # LIFO
-bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human
-for aggr_time in 20000 40000 80000 160000 320000 640000; do
-    echo "LIFO for aggregation time $aggr_time"
-    echo "Allocating: edge_size=$edge_alloc_human for num_csd=$num_csd"
-    cd user
-    make
-    cd ..
-    echo "LIFO for aggregation time $aggr_time" >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
-    printf "\n" >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
+bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
+for aggr_time in 10000 20000 30000; do
+    echo "LIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human vertex_size=$vertex_alloc_human $for num_csd=$num_csd"
+    echo "LIFO for aggregation time $aggr_time" >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
+    printf "\n" >> $output_path
 done
 
 # FIFO
-bash init_csds.sh  -n $num_csd -e $edge_alloc_human
-for aggr_time in 20000 40000 80000 160000 320000 640000; do
-    echo "FIFO for aggregation time $aggr_time"
-    echo "Allocating: edge_size=$edge_alloc_human for num_csd=$num_csd"
-    cd user
-    make
-    cd ..
-    echo "FIFO for aggregation time $aggr_time" >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
-    printf "\n" >> ./experiments/aggr_${dataset_path}_${x_percentage}.txt
+bash init_csds.sh  -n $num_csd -e $edge_alloc_human -v $vertex_alloc_human
+for aggr_time in 10000 20000 30000; do
+    echo "FIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human for num_csd=$num_csd"
+    echo "FIFO for aggregation time $aggr_time" >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
+    printf "\n" >> $output_path
 done

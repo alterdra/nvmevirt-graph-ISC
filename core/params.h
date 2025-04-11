@@ -13,12 +13,12 @@
 #define EDGE_SIZE 8
 
 // Latency in us
-#define AGG_LATENCY 100       // DMA write
-#define DMA_READ_LATENCY 0
-#define FLASH_READ_LATENCY 100
+#define AGG_LATENCY 0       // DMA write
+#define DMA_READ_LATENCY 238
+#define FLASH_READ_LATENCY 10000
 
 // In-storage computing
-#define CPU_MCU_SPEED_RATIO 2.3
+#define CPU_MCU_SPEED_RATIO 1.5
 
 // CSD DRAM Capacity
 // #define _KB 1024LL

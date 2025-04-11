@@ -169,9 +169,10 @@ void __do_perform_edge_proc(void)
 			long long end_time, size_not_in_cache;
 			double ratio;
 			long long partition_size;
-			int num_vertices = task.num_vertices;
+			int num_vertices;
 
 			queue_dequeue(future_task_queue, &task);
+			num_vertices = task.num_vertices;
 
 			// Edge I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
@@ -201,9 +202,10 @@ void __do_perform_edge_proc(void)
 			long long end_time, size_not_in_cache;
 			double ratio;
 			long long partition_size;
-			int num_vertices = task.num_vertices;
+			int num_vertices;
 
 			queue_dequeue(normal_task_queue, &task);
+			num_vertices = task.num_vertices;
 
 			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
