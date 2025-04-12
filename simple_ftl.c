@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/ktime.h>
+#include <linux/kthread.h>
 #include <linux/sched/clock.h>
 #include <linux/highmem.h>
 
@@ -133,14 +134,20 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 	// NVMEV_INFO("Edge-%d-%d I/O time: %lld", task.r, task.c, (long long) (task.nsecs_target * ratio));
-	while(ktime_get_ns() < end_time);
+	while(ktime_get_ns() < end_time){
+		if (kthread_should_stop())
+			return;
+	}
 
 	// Vertex parition read I/O
 	partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 	size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
 	end_time = ktime_get_ns() + (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE;
 	// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE);
-	while(ktime_get_ns() < end_time);
+	while(ktime_get_ns() < end_time){
+		if (kthread_should_stop())
+			return;
+	}
 
 	// Initialize vertex source and destination addresses
 	if(task.is_fvc == 0){
@@ -163,7 +170,8 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
-		// usleep_range(10, 20);
+		if (kthread_should_stop())
+			return;
 	}
 
 	id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;

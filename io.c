@@ -102,7 +102,8 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	// Compensation for MCU lower frequency
 	end_time = end_time + (end_time - start_time) * (CPU_MCU_SPEED_RATIO - 1);
 	while(ktime_get_ns() < end_time){
-		// usleep_range(10, 20);
+		if (kthread_should_stop())
+			return;
 	}
 	
 	// For task.csd_id, Edge task.r, task.c is finished
@@ -124,6 +125,9 @@ void __do_perform_edge_proc(void)
 	{
 		struct PROC_EDGE task;
 		bool future_aggr_ready = false;
+		
+		if (kthread_should_stop())
+			return;
 
 		if(get_queue_size(future_task_queue))
 		{
@@ -139,9 +143,11 @@ void __do_perform_edge_proc(void)
 				long long offset, v;
 
 				// Waiting for last column aggregation end
-				while(!hmb_dev.done_partition.virt_addr[task.r]);
-				if(task.iter == task.num_iters || (task.iter % 2 == 0 && task.r == 0))
-					queue_dequeue(future_task_queue, &task);
+				while(!hmb_dev.done_partition.virt_addr[task.r]){
+					if (kthread_should_stop())
+						return;
+				}
+				queue_dequeue(future_task_queue, &task);
 
 				// All normal task must be done --> swap normal queue and future queue
 				queue_swap(normal_task_queue, future_task_queue);
@@ -149,7 +155,10 @@ void __do_perform_edge_proc(void)
 				
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
-				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]);
+				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]){
+					if (kthread_should_stop())
+						return;
+				}
 
 				// End of iter vertices value update
 				csd_id = task.csd_id;
@@ -180,13 +189,24 @@ void __do_perform_edge_proc(void)
         		invalidate_edge_block(edge_buf, task.r, task.c);
 				// invalidate_edge_block_fifo(edge_buf);
 			}
-			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
+			if(task.edge_block_len == 0)
+				ratio = 1.0;
+			else
+				ratio = (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
-			while(ktime_get_ns() < end_time);
+			while(ktime_get_ns() < end_time){
+				if (kthread_should_stop())
+					return;
+			}
 
 			// Vertex parition aggregate to CSD vertex buffer
-			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
+			if(task.num_partitions == 0){
+				partition_size = 0;
+				NVMEV_INFO("Error: partition size is zero");
+			}
+			else
+				partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
 
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
@@ -213,17 +233,31 @@ void __do_perform_edge_proc(void)
         		if(task.iter == 0 && task.r > task.c)	// lower triangle
         			invalidate_edge_block(edge_buf, task.r, task.c);
 			}
-			ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
+			if(task.edge_block_len == 0)
+				ratio = 1.0;
+			else
+				ratio = (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
-			while(ktime_get_ns() < end_time);
+			while(ktime_get_ns() < end_time){
+				if (kthread_should_stop())
+					return;
+			}
 
 			// Vertex parition DMA read
-			partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
+			if(task.num_partitions == 0){
+				partition_size = 0;
+				NVMEV_INFO("Error: partition size is zero");
+			}
+			else
+				partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
 			end_time = ktime_get_ns() + (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE;
 			// NVMEV_INFO("Partition-%d I/O time: %lld", task.c, (long long) DMA_READ_LATENCY * size_not_in_cache / PAGE_SIZE);
-			while(ktime_get_ns() < end_time);
+			while(ktime_get_ns() < end_time){
+				if (kthread_should_stop())
+					return;
+			}
 
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
 			
