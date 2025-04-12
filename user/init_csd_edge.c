@@ -19,12 +19,12 @@
 
 // Virtual devices and file descripters
 int num_csds;
-// const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
+const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
 // imdt
-const char device[MAX_NUM_CSDS][20] = {
-    "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
-    "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
-};
+// const char device[MAX_NUM_CSDS][20] = {
+//     "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
+//     "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
+// };
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
@@ -563,8 +563,8 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -635,8 +635,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -644,27 +644,28 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
 void run_normal_grafu_dq(void* buffer, int __num_iter){
     
     long long s, e;
+    int ms_ns_ratio = 1000000;
     
     printf("Normal-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
     csd_proc_edge_loop_normal(buffer, __num_iter);
     e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("Grafu-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
     csd_proc_edge_loop_grafu(buffer, __num_iter);
     e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("DQ--------------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
     csd_proc_edge_loop_dual_queue(buffer, __num_iter);
     e = get_time_ns();
-    printf("Execution time: %lld us\n", (e - s) / 1000);
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 }
 
 void run_dq_cache_hitrate(void* buffer, int __num_iter)
@@ -673,25 +674,62 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
     int experiment_num = 1;
     long long total_time = 0;
     long long s, e;
-    for(int i = 0; i < experiment_num; i++){
+    int ms_ns_ratio = 1000000;
+
+    for(int i = 0; i < experiment_num; i++)
+    {
         printf("DQ--------------");
         if(init_csds_data(fd, buffer) == -1){
             printf("Init CSD edge data failed");
             break;
         }
+
         s = get_time_ns();
         csd_proc_edge_loop_dual_queue(buffer, __num_iter);
         e = get_time_ns();
-        printf("Execution time: %lld us\n", (e - s) / 1000);
-        total_time += (e - s) / 1000;
+        printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+        total_time += (e - s) / ms_ns_ratio;
+
         for(int csd_id = 0; csd_id < num_csds; csd_id++){
             cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
             printf("%f ", hmb_dev.buf2.virt_addr[csd_id]);
         }
         printf("\n");
     }
-    printf("Avg. execution time: %lld\n", total_time / experiment_num);
+    printf("Avg. execution time: %lld ms\n", total_time / experiment_num);
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds / experiment_num);
+}
+
+void run_dq_composition(void* buffer, int __num_iter)
+{
+    int experiment_num = 1;
+    long long total_time = 0;
+    long long s, e;
+    int ms_ns_ratio = 1000000;
+
+    for(int i = 0; i < experiment_num; i++){
+        printf("DQ--------------");
+        if(init_csds_data(fd, buffer) == -1){
+            printf("Init CSD edge data failed");
+            break;
+        }
+
+        s = get_time_ns();
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+        e = get_time_ns();
+        printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+        total_time += (e - s) / ms_ns_ratio;
+
+        long long edge_proc_time = 0, edge_io_time = 0;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            // Already being divided by ms_ns_ratio in kernel modules
+            edge_proc_time += hmb_dev.buf2.virt_addr[csd_id + num_csds];
+            edge_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 2];
+        }
+        printf("Avg. edge processing time: %lld ms\n", edge_proc_time / num_csds);
+        printf("Avg. edge IO time: %lld ms\n", edge_io_time / num_csds);
+        printf("\n");
+    }
 }
 
 int main(int argc, char* argv[]) 
@@ -737,8 +775,9 @@ int main(int argc, char* argv[])
 
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
-    run_normal_grafu_dq(buffer, __num_iter);
+    // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
+    run_dq_composition(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

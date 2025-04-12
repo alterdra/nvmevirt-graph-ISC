@@ -121,6 +121,9 @@ void __do_perform_edge_proc(void)
 	struct vertex_buffer *vertex_buf = &nvmev_vdev->vertex_buf;
 	extern int invalidation_at_future_value;
 
+	// Execution composition
+	long long EXEC_START_TIME, EXEC_END_TIME;
+
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
 		struct PROC_EDGE task;
@@ -182,12 +185,12 @@ void __do_perform_edge_proc(void)
 
 			queue_dequeue(future_task_queue, &task);
 			num_vertices = task.num_vertices;
-
+			
+		EXEC_START_TIME = ktime_get_ns();
 			// Edge I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 			if(invalidation_at_future_value){
         		invalidate_edge_block(edge_buf, task.r, task.c);
-				// invalidate_edge_block_fifo(edge_buf);
 			}
 			if(task.edge_block_len == 0)
 				ratio = 1.0;
@@ -199,6 +202,8 @@ void __do_perform_edge_proc(void)
 				if (kthread_should_stop())
 					return;
 			}
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 
 			// Vertex parition aggregate to CSD vertex buffer
 			if(task.num_partitions == 0){
@@ -208,8 +213,11 @@ void __do_perform_edge_proc(void)
 			else
 				partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
-
+		
+		EXEC_START_TIME = ktime_get_ns();
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
 
 			// Fake E_00 task: for even iter end of iteration
 			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
@@ -226,7 +234,8 @@ void __do_perform_edge_proc(void)
 
 			queue_dequeue(normal_task_queue, &task);
 			num_vertices = task.num_vertices;
-
+		
+		EXEC_START_TIME = ktime_get_ns();
 			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
 			if(invalidation_at_future_value){
@@ -243,6 +252,8 @@ void __do_perform_edge_proc(void)
 				if (kthread_should_stop())
 					return;
 			}
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 
 			// Vertex parition DMA read
 			if(task.num_partitions == 0){
@@ -258,8 +269,11 @@ void __do_perform_edge_proc(void)
 				if (kthread_should_stop())
 					return;
 			}
-
+			
+		EXEC_START_TIME = ktime_get_ns();
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
 			
 			// Insert to future task queue
 			if(task.iter != task.num_iters - 1 &&

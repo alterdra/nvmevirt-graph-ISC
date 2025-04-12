@@ -19,6 +19,9 @@ struct edge_buffer {
     struct mutex lock;
     long long size, capacity;
     long long total_access_cnt, hit_cnt;
+
+    // Todo: execution time composition to a new header file
+    long long edge_proc_time, edge_io_time;
 };
 
 extern char *cache_eviction_policy;
