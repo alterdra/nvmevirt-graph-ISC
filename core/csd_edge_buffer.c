@@ -11,7 +11,7 @@ void edge_buffer_init(struct edge_buffer *buf)
     printk(KERN_INFO "Edge buffer size: %lld", buf->capacity);
     printk(KERN_INFO "Cache eviction policy: %s", cache_eviction_policy);
     printk(KERN_INFO "Partial eviction?: %d", partial_edge_eviction);
-    printk(KERN_INFO "Invalidation at future value?: %d", partial_edge_eviction);
+    printk(KERN_INFO "Invalidation at future value?: %d", invalidation_at_future_value);
 
     // Todo: execution time composition to a new header file
     buf->edge_proc_time = buf->edge_io_time = 0;

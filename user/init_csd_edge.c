@@ -19,12 +19,12 @@
 
 // Virtual devices and file descripters
 int num_csds;
-const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
+// const char device[MAX_NUM_CSDS][20] = {"/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1"};
 // imdt
-// const char device[MAX_NUM_CSDS][20] = {
-//     "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
-//     "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
-// };
+const char device[MAX_NUM_CSDS][20] = {
+    "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
+    "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
+};
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
@@ -563,8 +563,8 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -635,8 +635,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
     if(flush_csd_dram(buffer) == -1)
         return -1;
 
-    for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
-        printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
+    // for(int i = max(0, num_vertices - 5); i < num_vertices; i++)
+    //     printf("Vertex[%d]: %f\n", i, hmb_dev.buf0.virt_addr[i]);
 
     return 0;
 }
@@ -776,8 +776,8 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
     // run_normal_grafu_dq(buffer, __num_iter);
-    // run_dq_cache_hitrate(buffer, __num_iter);
-    run_dq_composition(buffer, __num_iter);
+    run_dq_cache_hitrate(buffer, __num_iter);
+    // run_dq_composition(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

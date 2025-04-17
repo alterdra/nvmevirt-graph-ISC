@@ -2,8 +2,8 @@
 
 # Ex: bash test_aggr.sh LiveJournal.pl 3 526M 18M
 # Ex: bash test_aggr.sh Twitter-2010.pl 1 11G 160M
-# Ex: bash test_aggr.sh Friendster.pl  1 14G 250M
-# Ex: bash test_aggr.sh Uk-2007.pl  1 30G 414M
+# Ex: bash test_aggr.sh Friendster.pl 1 14G 250M
+# Ex: bash test_aggr.sh Uk-2007.pl 1 30G 414M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -30,7 +30,7 @@ convert_to_human() {
     fi
 }
 
-num_csd=2
+num_csd=8
 num_iter=10
 
 dataset_path=$1
@@ -52,7 +52,7 @@ vertex_alloc_human=$(convert_to_human $vertex_alloc)
 
 num_partition=$(awk 'NR==1{print $4}' "$dataset_path/meta")
 echo "Number of partitions: $num_partition"
-output_path="experiments/aggr_${dataset_path}_${x_percentage}%_p${num_partition}.txt"
+output_path="experiments/aggr_${dataset_path}_${x_percentage}%_p${num_partition}_c${num_csd}.txt"
 
 cd user
 make

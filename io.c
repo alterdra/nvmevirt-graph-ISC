@@ -15,6 +15,8 @@
 #include <asm/fpu/api.h>
 #include <asm/processor.h>
 
+#include <linux/jiffies.h>
+
 #include "nvmev.h"
 #include "dma.h"
 
@@ -144,12 +146,21 @@ void __do_perform_edge_proc(void)
 			{
 				int csd_id, num_vertices;
 				long long offset, v;
+				unsigned long timeout;
 
 				// Waiting for last column aggregation end
+				timeout = jiffies + msecs_to_jiffies(10000); // 10 second timeout
 				while(!hmb_dev.done_partition.virt_addr[task.r]){
 					if (kthread_should_stop())
 						return;
+					// Check if we've timed out
+					if (time_after(jiffies, timeout)) {
+						pr_warn("Timeout waiting for aggregation completion\n");
+						break;
+					}
+					cpu_relax();
 				}
+				
 				queue_dequeue(future_task_queue, &task);
 
 				// All normal task must be done --> swap normal queue and future queue
@@ -158,9 +169,17 @@ void __do_perform_edge_proc(void)
 				
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
-				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]){
+				
+				timeout = jiffies + msecs_to_jiffies(10000); // 10 second timeout
+				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]) {
 					if (kthread_should_stop())
 						return;
+					// Check if we've timed out
+					if (time_after(jiffies, timeout)) {
+						pr_warn("Timeout waiting for partition completion\n");
+						break;
+					}
+					cpu_relax();
 				}
 
 				// End of iter vertices value update
