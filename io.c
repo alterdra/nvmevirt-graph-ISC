@@ -88,10 +88,16 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	int* e = storage + task.edge_block_slba / VERTEX_SIZE;
 	int* e_end = e + task.edge_block_len / VERTEX_SIZE;
 	
-	// Process the edges
 	long long start_time, end_time;
-	long long hmb_offset = (long long)(csd_id + 1)* num_vertices;
+	long long hmb_offset, max_partition_offset;
 	int u = -1, v = -1, id;
+
+	// Update the maximum partition for hmb window
+	max_partition_offset = (long long)(task.num_csds + 2) * num_vertices + csd_id;
+	dst[max_partition_offset] = task.c;
+
+	// Process the edges
+	hmb_offset = (long long)(csd_id + 1) * num_vertices;
 	start_time = ktime_get_ns();
 	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
 		u = *e, v = *(e + 1);

@@ -10,6 +10,9 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <time.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <pthread.h>
 
 #include "../core/proc_edge_struct.h"
 #include "../core/params.h"
@@ -43,6 +46,12 @@ long long*** edge_blocks_length;   // edge_blocks_length[num_partitions][num_par
 
 // Aggregation latency
 long long aggregation_time = AGG_LATENCY;
+
+// Monitoring
+long long total_aggr_time; 
+int curr_edge_column_normal; //HMB size
+int curr_edge_column_future;
+int curr_iter;   
 
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
@@ -572,9 +581,14 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
 int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
 {
     int ret;
+
+    // For HMB size monitoring
+    curr_edge_column_normal = curr_edge_column_future = 0;
     
     for(int iter = 0; iter < num_iter; iter++)
     {
+        // For HMB size monitoring
+        curr_iter = iter;
         if(iter % 2 == 0){
             // 1. Iter: Sending ioctl command for all edge blocks
             for(int c = 0; c < num_partitions; c++){
@@ -594,10 +608,13 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
             // 2. Aggregate for each columns
             for(int c = 0; c < num_partitions; c++){
                 aggr_partition(c);
-                // long long end_start = get_time_ns();
+                long long end_start = get_time_ns();
                 conv_partition(c);
-                // long long end_end = get_time_ns();
-                // printf("Aggreagtion time: %lld us\n", (end_end - end_start) / 1000);
+                long long end_end = get_time_ns();
+                total_aggr_time += (end_end - end_start);
+
+                // HMB size monitoring
+                curr_edge_column_normal = c;
             }
 
         }
@@ -618,10 +635,13 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter)
             }
             for(int c = num_partitions - 1; c >= 0; c--){
                 aggr_partition(c);
-                // long long end_start = get_time_ns();
+                long long end_start = get_time_ns();
                 conv_partition(c);
-                // long long end_end = get_time_ns();
-                // printf("Aggreagtion time: %lld us\n", (end_end - end_start) / 1000);
+                long long end_end = get_time_ns();
+                total_aggr_time += (end_end - end_start);
+
+                // HMB size monitoring
+                curr_edge_column_normal = c;
             }
         }
         // 3. End of the iter update
@@ -728,8 +748,46 @@ void run_dq_composition(void* buffer, int __num_iter)
         }
         printf("Avg. edge processing time: %lld ms\n", edge_proc_time / num_csds);
         printf("Avg. edge IO time: %lld ms\n", edge_io_time / num_csds);
+        printf("Total aggregation time: %lld ms\n", num_csds == 1 ? 0 : total_aggr_time / ms_ns_ratio);
         printf("\n");
     }
+}
+
+volatile atomic_bool monitor_running = true;
+void* monitor_window_size(void*) {
+    while (atomic_load(&monitor_running)) {
+        long long max_partition_offset = (long long)(num_csds + 2) * num_vertices;
+        int csd_column_normal, csd_column_future;
+        csd_column_normal = curr_iter % 2 == 0 ? 0 : num_partitions - 1;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            if(curr_iter % 2 == 0)
+                csd_column_normal = max(csd_column_normal, hmb_dev.buf1.virt_addr[max_partition_offset + csd_id]);
+            else
+                csd_column_normal = min(csd_column_normal, hmb_dev.buf1.virt_addr[max_partition_offset + csd_id]);
+            // max_csd_column_future = max(max_csd_column_future, hmb_dev.buf2.virt_addr[max_partition_offset + csd_id]);
+        }
+        printf("Host aggr: %d, CSD normal: %d\n", curr_edge_column_normal, csd_column_normal);
+        usleep(100 * 1000); // 100 milliseconds
+    }
+    return NULL;
+}
+
+void run_dq_hmb_size(void* buffer, int __num_iter)
+{
+    printf("DQ--------------");
+    if(init_csds_data(fd, buffer) == -1){
+        printf("Init CSD edge data failed");
+        return;
+    }
+
+    pthread_t monitor_thread;
+    if (pthread_create(&monitor_thread, NULL, monitor_window_size, NULL) != 0) {
+        perror("Failed to create monitoring thread");
+        return;
+    }
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter);
+    atomic_store(&monitor_running, false);
+    pthread_join(monitor_thread, NULL);
 }
 
 int main(int argc, char* argv[]) 
@@ -775,9 +833,11 @@ int main(int argc, char* argv[])
 
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
+    total_aggr_time = 0;
     // run_normal_grafu_dq(buffer, __num_iter);
-    run_dq_cache_hitrate(buffer, __num_iter);
+    // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter);
+    run_dq_hmb_size(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;
