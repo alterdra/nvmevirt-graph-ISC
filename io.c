@@ -119,6 +119,33 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	done[id] = 1;
 }
 
+void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_prefetch, long long edge_proc_time)
+{
+	unsigned long long vacent_edge_block_size, size_in_cache;
+	long long edge_io_time;
+	double ratio;
+
+	if(task_prefetch.edge_block_len == 0)
+		return;
+
+	size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
+	if(size_in_cache == task_prefetch.edge_block_len)
+		return;
+	if(size_in_cache == -1)
+		size_in_cache = 0;
+	
+	edge_io_time = task_prefetch.nsecs_target;
+	ratio = min(1.0, 1.0 * edge_proc_time / edge_io_time);
+	vacent_edge_block_size = edge_buf->capacity - (edge_buf->size - size_in_cache);
+	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), task_prefetch.edge_block_len);
+	size_in_cache = min(size_in_cache, vacent_edge_block_size);
+	access_edge_block(edge_buf, task_prefetch.r, task_prefetch.c, size_in_cache);
+	// if(task_prefetch.iter == 0 && task_prefetch.c == 12){
+	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Prefetching edge-block-%u-%u with size %lld, edge_block_len: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len);
+	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Edge buffer size: %lld, capacity: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, edge_buf->size, edge_buf->capacity);
+	// }
+}
+
 // void end_of_iter()
 
 void __do_perform_edge_proc(void)
@@ -131,6 +158,7 @@ void __do_perform_edge_proc(void)
 
 	// Execution composition
 	long long EXEC_START_TIME, EXEC_END_TIME;
+	long long edge_proc_time, edge_io_time;
 
 	while(get_queue_size(normal_task_queue) || get_queue_size(future_task_queue))
 	{
@@ -204,6 +232,7 @@ void __do_perform_edge_proc(void)
 		if(future_aggr_ready && get_queue_size(future_task_queue))
 		{
 			long long end_time, size_not_in_cache;
+			unsigned long long size_in_cache;
 			double ratio;
 			long long partition_size;
 			int num_vertices;
@@ -243,6 +272,23 @@ void __do_perform_edge_proc(void)
 			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 		EXEC_END_TIME = ktime_get_ns();
 		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
+		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
+
+			// Prefetch the next future edge block
+			if(task.is_prefetching && get_queue_size(future_task_queue) > 0)
+			{
+				struct PROC_EDGE task_prefetch;
+				get_queue_front(future_task_queue, &task_prefetch);
+				size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
+				if(size_in_cache != task_prefetch.edge_block_len){
+					// Edge block is not fully in cache
+					prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
+				}
+				else if(get_queue_size(normal_task_queue) > 0){
+					get_queue_front(normal_task_queue, &task_prefetch);
+					prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
+				}
+			}
 
 			// Fake E_00 task: for even iter end of iteration
 			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
@@ -272,7 +318,9 @@ void __do_perform_edge_proc(void)
 			else
 				ratio = (1.0 * size_not_in_cache / task.edge_block_len);
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			// if(task.iter == 0 && task.c == 12)
+			// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, size: %lld, queue_size: %d, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio), task.edge_block_len, get_queue_size(normal_task_queue));
+			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, size: %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())
 					return;
@@ -299,6 +347,14 @@ void __do_perform_edge_proc(void)
 			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
 		EXEC_END_TIME = ktime_get_ns();
 		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
+		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
+
+			// Prefetch the next normal edge block
+			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0 && edge_buf->size < edge_buf->capacity){
+				struct PROC_EDGE task_prefetch;
+				get_queue_front(normal_task_queue, &task_prefetch);
+				prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
+			}
 			
 			// Insert to future task queue
 			if(task.iter != task.num_iters - 1 &&

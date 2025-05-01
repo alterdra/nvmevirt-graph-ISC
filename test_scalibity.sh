@@ -59,13 +59,13 @@ cd ..
 total_num_csd=8
 echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$total_num_csd"
 if [ "$x_percentage" -eq 100 ]; then
-    bash init_csds.sh -n $total_num_csd
+    bash init_csds.sh -n $total_num_csd -c LIFO -p 1 -i 1
 else
-    bash init_csds.sh -n $total_num_csd -e $edge_alloc_human -v $vertex_alloc_human
+    bash init_csds.sh -n $total_num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
 fi
 
 # Loop through the number of CSDs
-for num_csd in 1 2 4 8; do
+for num_csd in 8; do
     if [ "$num_csd" -eq 1 ]; then
         aggr_latency=0
     else
