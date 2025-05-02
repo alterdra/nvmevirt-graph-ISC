@@ -667,26 +667,26 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
     long long s, e;
     int ms_ns_ratio = 1000000;
     
-    // printf("Normal-----------");
-    // init_csds_data(fd, buffer);
-    // s = get_time_ns();
-    // csd_proc_edge_loop_normal(buffer, __num_iter);
-    // e = get_time_ns();
-    // printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("Normal-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_normal(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
-    // printf("Grafu-----------");
-    // init_csds_data(fd, buffer);
-    // s = get_time_ns();
-    // csd_proc_edge_loop_grafu(buffer, __num_iter);
-    // e = get_time_ns();
-    // printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("Grafu-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_grafu(buffer, __num_iter);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
-    // printf("DQ--------------");
-    // init_csds_data(fd, buffer);
-    // s = get_time_ns();
-    // csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
-    // e = get_time_ns();
-    // printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("DQ--------------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("DQ with prefetching--------------");
     init_csds_data(fd, buffer);
@@ -694,6 +694,37 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
     csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+}
+
+void run_dq_prefetch(void* buffer, int __num_iter)
+{
+    float cache_hit_rate;
+    long long s, e;
+    int ms_ns_ratio = 1000000;
+
+    printf("DQ--------------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+    e = get_time_ns();
+    cache_hit_rate = 0.0;
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+    }
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
+
+    printf("DQ_PF-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
+    e = get_time_ns();
+    cache_hit_rate = 0.0;
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+    }
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
 }
 
 void run_dq_cache_hitrate(void* buffer, int __num_iter)
@@ -842,10 +873,11 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
     total_aggr_time = 0;
-    run_normal_grafu_dq(buffer, __num_iter);
+    // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter);
     // run_dq_hmb_size(buffer, __num_iter);
+    run_dq_prefetch(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

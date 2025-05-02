@@ -139,7 +139,7 @@ void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_pre
 	vacent_edge_block_size = edge_buf->capacity - (edge_buf->size - size_in_cache);
 	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), task_prefetch.edge_block_len);
 	size_in_cache = min(size_in_cache, vacent_edge_block_size);
-	access_edge_block(edge_buf, task_prefetch.r, task_prefetch.c, size_in_cache);
+	access_edge_block(edge_buf, task_prefetch.r, task_prefetch.c, size_in_cache, true);
 	// if(task_prefetch.iter == 0 && task_prefetch.c == 12){
 	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Prefetching edge-block-%u-%u with size %lld, edge_block_len: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len);
 	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Edge buffer size: %lld, capacity: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, edge_buf->size, edge_buf->capacity);
@@ -242,7 +242,7 @@ void __do_perform_edge_proc(void)
 			
 		EXEC_START_TIME = ktime_get_ns();
 			// Edge I/O
-			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
+			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len, false);
 			if(invalidation_at_future_value){
         		invalidate_edge_block(edge_buf, task.r, task.c);
 			}
@@ -275,19 +275,19 @@ void __do_perform_edge_proc(void)
 		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
 
 			// Prefetch the next future edge block
-			if(task.is_prefetching && get_queue_size(future_task_queue) > 0)
-			{
+			// if(task.is_prefetching && get_queue_size(future_task_queue) > 0)
+			// {
+			// 	struct PROC_EDGE task_prefetch;
+			// 	get_queue_front(future_task_queue, &task_prefetch);
+			// 	size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
+			// 	if(size_in_cache != task_prefetch.edge_block_len){
+			// 		prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
+			// 	}
+			// }
+			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0){
 				struct PROC_EDGE task_prefetch;
-				get_queue_front(future_task_queue, &task_prefetch);
-				size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
-				if(size_in_cache != task_prefetch.edge_block_len){
-					// Edge block is not fully in cache
-					prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
-				}
-				else if(get_queue_size(normal_task_queue) > 0){
-					get_queue_front(normal_task_queue, &task_prefetch);
-					prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
-				}
+				get_queue_front(normal_task_queue, &task_prefetch);
+				prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
 			}
 
 			// Fake E_00 task: for even iter end of iteration
@@ -308,7 +308,7 @@ void __do_perform_edge_proc(void)
 		
 		EXEC_START_TIME = ktime_get_ns();
 			// Edge read I/O
-			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len);
+			size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len, false);
 			if(invalidation_at_future_value){
         		if(task.iter == 0 && task.r > task.c)	// lower triangle
         			invalidate_edge_block(edge_buf, task.r, task.c);
@@ -350,7 +350,7 @@ void __do_perform_edge_proc(void)
 		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
 
 			// Prefetch the next normal edge block
-			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0 && edge_buf->size < edge_buf->capacity){
+			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0){
 				struct PROC_EDGE task_prefetch;
 				get_queue_front(normal_task_queue, &task_prefetch);
 				prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);

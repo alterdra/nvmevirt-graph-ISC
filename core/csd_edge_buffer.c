@@ -34,7 +34,7 @@ void edge_buffer_destroy(struct edge_buffer *buf)
     INIT_LIST_HEAD(&buf->head);
 }
 
-long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size)
+long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size, bool is_prefetch)
 {
     long long curr_size;
     if(size == 0)
@@ -54,7 +54,8 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
         unit->c = c;
         unit->size = size > buf->capacity ? buf->capacity : size;
         buf->size += unit->size;
-        buf->total_access_cnt += size / PAGE_SIZE;
+        if(!is_prefetch)
+            buf->total_access_cnt += size / PAGE_SIZE;
         list_add_tail(&unit->list, &buf->head);
 
         return size;
@@ -64,8 +65,10 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
         if(partial_edge_eviction){
             evict_edge_block(buf, size - curr_size);
         }
-        buf->hit_cnt += curr_size / PAGE_SIZE;
-        buf->total_access_cnt += size / PAGE_SIZE;
+        if(!is_prefetch){
+            buf->hit_cnt += curr_size / PAGE_SIZE;
+            buf->total_access_cnt += size / PAGE_SIZE;
+        }
         // printk(KERN_INFO "Cache hit Processing edge-block-%u-%u, size: %lld", r, c, size);
 
         return size - curr_size;
