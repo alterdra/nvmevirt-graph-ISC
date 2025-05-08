@@ -774,19 +774,21 @@ void run_dq_composition(void* buffer, int __num_iter)
         }
 
         s = get_time_ns();
-        csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
         e = get_time_ns();
         printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
         total_time += (e - s) / ms_ns_ratio;
 
-        long long edge_proc_time = 0, edge_io_time = 0;
+        long long edge_proc_time = 0, edge_internal_io_time = 0, edge_external_io_time = 0;
         for(int csd_id = 0; csd_id < num_csds; csd_id++){
             // Already being divided by ms_ns_ratio in kernel modules
             edge_proc_time += hmb_dev.buf2.virt_addr[csd_id + num_csds];
-            edge_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 2];
+            edge_internal_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 2];
+            edge_external_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 3];
         }
         printf("Avg. edge processing time: %lld ms\n", edge_proc_time / num_csds);
-        printf("Avg. edge IO time: %lld ms\n", edge_io_time / num_csds);
+        printf("Avg. edge IO time (Internal I/O): %lld ms\n", edge_internal_io_time / num_csds);
+        printf("Avg. vertex IO time (External I/O): %lld ms\n", edge_external_io_time / num_csds);
         printf("Total aggregation time: %lld ms\n", num_csds == 1 ? 0 : total_aggr_time / ms_ns_ratio);
         printf("\n");
     }
@@ -873,11 +875,11 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
     total_aggr_time = 0;
-    // run_normal_grafu_dq(buffer, __num_iter);
+    run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter);
     // run_dq_hmb_size(buffer, __num_iter);
-    run_dq_prefetch(buffer, __num_iter);
+    // run_dq_prefetch(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

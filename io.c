@@ -136,14 +136,10 @@ void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_pre
 	
 	edge_io_time = task_prefetch.nsecs_target;
 	ratio = min(1.0, 1.0 * edge_proc_time / edge_io_time);
-	vacent_edge_block_size = edge_buf->capacity - (edge_buf->size - size_in_cache);
 	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), task_prefetch.edge_block_len);
-	size_in_cache = min(size_in_cache, vacent_edge_block_size);
+	// vacent_edge_block_size = edge_buf->capacity - (edge_buf->size - size_in_cache);
+	// size_in_cache = min(size_in_cache, vacent_edge_block_size);
 	access_edge_block(edge_buf, task_prefetch.r, task_prefetch.c, size_in_cache, true);
-	// if(task_prefetch.iter == 0 && task_prefetch.c == 12){
-	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Prefetching edge-block-%u-%u with size %lld, edge_block_len: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len);
-	// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Edge buffer size: %lld, capacity: %lld", task_prefetch.csd_id, __func__, task_prefetch.iter, edge_buf->size, edge_buf->capacity);
-	// }
 }
 
 // void end_of_iter()
@@ -239,6 +235,17 @@ void __do_perform_edge_proc(void)
 
 			queue_dequeue(future_task_queue, &task);
 			num_vertices = task.num_vertices;
+		
+		EXEC_START_TIME = ktime_get_ns();
+			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
+		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
+
+		// Prefetch the current edge block (Pipelining)
+		if(task.is_prefetching){
+			prefetch_edge_block(edge_buf, task, edge_proc_time);
+		}
 			
 		EXEC_START_TIME = ktime_get_ns();
 			// Edge I/O
@@ -257,8 +264,9 @@ void __do_perform_edge_proc(void)
 					return;
 			}
 		EXEC_END_TIME = ktime_get_ns();
-		edge_buf->edge_io_time += (EXEC_END_TIME - EXEC_START_TIME);
-
+		edge_buf->edge_internal_io_time += (EXEC_END_TIME - EXEC_START_TIME);
+		
+		EXEC_START_TIME = ktime_get_ns();
 			// Vertex parition aggregate to CSD vertex buffer
 			if(task.num_partitions == 0){
 				partition_size = 0;
@@ -267,29 +275,9 @@ void __do_perform_edge_proc(void)
 			else
 				partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 			size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
-		
-		EXEC_START_TIME = ktime_get_ns();
-			__proc_edge(task, hmb_dev.buf2.virt_addr, hmb_dev.buf1.virt_addr, hmb_dev.done2.virt_addr);
 		EXEC_END_TIME = ktime_get_ns();
-		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
-		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
-
-			// Prefetch the next future edge block
-			// if(task.is_prefetching && get_queue_size(future_task_queue) > 0)
-			// {
-			// 	struct PROC_EDGE task_prefetch;
-			// 	get_queue_front(future_task_queue, &task_prefetch);
-			// 	size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
-			// 	if(size_in_cache != task_prefetch.edge_block_len){
-			// 		prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
-			// 	}
-			// }
-			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0){
-				struct PROC_EDGE task_prefetch;
-				get_queue_front(normal_task_queue, &task_prefetch);
-				prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
-			}
-
+		edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
+			
 			// Fake E_00 task: for even iter end of iteration
 			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
 				task.r = task.c = 0;
@@ -305,6 +293,17 @@ void __do_perform_edge_proc(void)
 
 			queue_dequeue(normal_task_queue, &task);
 			num_vertices = task.num_vertices;
+
+		EXEC_START_TIME = ktime_get_ns();
+			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
+		EXEC_END_TIME = ktime_get_ns();
+		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
+		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
+
+			// Prefetch the current edge block (Pipelining)
+			if(task.is_prefetching){
+				prefetch_edge_block(edge_buf, task, edge_proc_time);
+			}
 		
 		EXEC_START_TIME = ktime_get_ns();
 			// Edge read I/O
@@ -326,8 +325,9 @@ void __do_perform_edge_proc(void)
 					return;
 			}
 		EXEC_END_TIME = ktime_get_ns();
-		edge_buf->edge_io_time += (EXEC_END_TIME - EXEC_START_TIME);
-
+		edge_buf->edge_internal_io_time += (EXEC_END_TIME - EXEC_START_TIME);
+		
+		EXEC_START_TIME = ktime_get_ns();
 			// Vertex parition DMA read
 			if(task.num_partitions == 0){
 				partition_size = 0;
@@ -342,19 +342,8 @@ void __do_perform_edge_proc(void)
 				if (kthread_should_stop())
 					return;
 			}
-			
-		EXEC_START_TIME = ktime_get_ns();
-			__proc_edge(task, hmb_dev.buf1.virt_addr, hmb_dev.buf0.virt_addr, hmb_dev.done1.virt_addr);
 		EXEC_END_TIME = ktime_get_ns();
-		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
-		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
-
-			// Prefetch the next normal edge block
-			if(task.is_prefetching && get_queue_size(normal_task_queue) > 0){
-				struct PROC_EDGE task_prefetch;
-				get_queue_front(normal_task_queue, &task_prefetch);
-				prefetch_edge_block(edge_buf, task_prefetch, edge_proc_time);
-			}
+		edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 			
 			// Insert to future task queue
 			if(task.iter != task.num_iters - 1 &&

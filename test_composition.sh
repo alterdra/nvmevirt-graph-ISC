@@ -65,7 +65,7 @@ else
 fi
 
 # Loop through the number of CSDs
-for num_csd in 1 2 4 8; do
+for num_csd in 8; do
     if [ "$num_csd" -eq 1 ]; then
         aggr_latency=0
     else

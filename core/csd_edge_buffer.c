@@ -14,7 +14,7 @@ void edge_buffer_init(struct edge_buffer *buf)
     printk(KERN_INFO "Invalidation at future value?: %d", invalidation_at_future_value);
 
     // Todo: execution time composition to a new header file
-    buf->edge_proc_time = buf->edge_io_time = 0;
+    buf->edge_proc_time = buf->edge_internal_io_time = buf->edge_external_io_time = 0;
 }
 
 void edge_buffer_destroy(struct edge_buffer *buf)
@@ -29,7 +29,7 @@ void edge_buffer_destroy(struct edge_buffer *buf)
     buf->hit_cnt = buf->total_access_cnt = 0;
 
     // Todo: execution time composition to a new header file
-    buf->edge_proc_time = buf->edge_io_time = 0;
+    buf->edge_proc_time = buf->edge_internal_io_time = buf->edge_external_io_time = 0;
     
     INIT_LIST_HEAD(&buf->head);
 }

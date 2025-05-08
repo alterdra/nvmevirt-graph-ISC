@@ -21,7 +21,7 @@ struct edge_buffer {
     long long total_access_cnt, hit_cnt;
 
     // Todo: execution time composition to a new header file
-    long long edge_proc_time, edge_io_time;
+    long long edge_proc_time, edge_internal_io_time, edge_external_io_time;
 };
 
 extern char *cache_eviction_policy;

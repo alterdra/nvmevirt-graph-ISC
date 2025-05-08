@@ -292,11 +292,13 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 
 				NVMEV_INFO("Hit/Total (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.hit_cnt, nvmev_vdev->edge_buf.total_access_cnt);
 				NVMEV_INFO("Hit/Total (Vertex buffer): %lld/%lld", nvmev_vdev->vertex_buf.hit_cnt, nvmev_vdev->vertex_buf.total_access_cnt);
-				NVMEV_INFO("Edge Processing time: %lld ms, IO time: %lld ms", nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio, nvmev_vdev->edge_buf.edge_io_time / ms_ns_ratio);
+				NVMEV_INFO("Edge Processing time: %lld ms, Internal IO time: %lld ms, External IO time: %lld ms", nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio, 
+					nvmev_vdev->edge_buf.edge_internal_io_time / ms_ns_ratio, nvmev_vdev->edge_buf.edge_external_io_time / ms_ns_ratio);
 
 				hmb_dev.buf2.virt_addr[csd_id] = 1.0f * nvmev_vdev->edge_buf.hit_cnt / nvmev_vdev->edge_buf.total_access_cnt;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds] = nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio;
-				hmb_dev.buf2.virt_addr[csd_id + num_csds * 2] = nvmev_vdev->edge_buf.edge_io_time / ms_ns_ratio;
+				hmb_dev.buf2.virt_addr[csd_id + num_csds * 2] = nvmev_vdev->edge_buf.edge_internal_io_time / ms_ns_ratio;
+				hmb_dev.buf2.virt_addr[csd_id + num_csds * 3] = nvmev_vdev->edge_buf.edge_external_io_time / ms_ns_ratio;
 
 				edge_buffer_destroy(&(nvmev_vdev->edge_buf));
 				vertex_buffer_destroy(&(nvmev_vdev->vertex_buf));

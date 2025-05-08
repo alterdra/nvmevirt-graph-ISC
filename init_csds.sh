@@ -1,9 +1,12 @@
 #!/bin/bash
 
 # Unload existing kernel modules dynamically
-modules=("nvmev0" "nvmev1" "nvmev2" "nvmev3" "nvmev4" "nvmev5" "nvmev6" "nvmev7" "hmb")
+modules=("hmb")
+for i in {0..15}; do
+    modules+=("nvmev$i")
+done
 for module in "${modules[@]}"; do
-    if lsmod | grep -q "$module"; then
+    if lsmod | grep -q "^$module"; then
         echo "Removing $module..."
         sudo rmmod "$module"
     fi
