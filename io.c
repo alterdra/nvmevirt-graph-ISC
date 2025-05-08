@@ -241,11 +241,6 @@ void __do_perform_edge_proc(void)
 		EXEC_END_TIME = ktime_get_ns();
 		edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
 		edge_proc_time = EXEC_END_TIME - EXEC_START_TIME;
-
-		// Prefetch the current edge block (Pipelining)
-		if(task.is_prefetching){
-			prefetch_edge_block(edge_buf, task, edge_proc_time);
-		}
 			
 		EXEC_START_TIME = ktime_get_ns();
 			// Edge I/O
@@ -257,6 +252,13 @@ void __do_perform_edge_proc(void)
 				ratio = 1.0;
 			else
 				ratio = (1.0 * size_not_in_cache / task.edge_block_len);
+			
+			// Prefetch current edge block (Pipelining)
+			if(task.is_prefetching){
+				ratio -= 1.0 * edge_proc_time / (task.nsecs_target * ratio);
+				if(ratio < 0) ratio = 0;
+			}
+			
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
@@ -316,9 +318,15 @@ void __do_perform_edge_proc(void)
 				ratio = 1.0;
 			else
 				ratio = (1.0 * size_not_in_cache / task.edge_block_len);
+
+			// Prefetch current edge block (Pipelining)
+			if(task.is_prefetching){
+				ratio -= 1.0 * edge_proc_time / (task.nsecs_target * ratio);
+				if(ratio < 0) ratio = 0;
+			}
+		
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			// if(task.iter == 0 && task.c == 12)
-			// 	NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, size: %lld, queue_size: %d, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio), task.edge_block_len, get_queue_size(normal_task_queue));
+
 			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, size: %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())

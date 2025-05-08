@@ -56,21 +56,9 @@ cd user
 make
 cd ..
 
-total_num_csd=8
-echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$total_num_csd"
-if [ "$x_percentage" -eq 100 ]; then
-    bash init_csds.sh -n $total_num_csd
-else
-    bash init_csds.sh -n $total_num_csd -e $edge_alloc_human -v $vertex_alloc_human
-fi
-
 # Loop through the number of CSDs
-for num_csd in 8; do
-    if [ "$num_csd" -eq 1 ]; then
-        aggr_latency=0
-    else
-        aggr_latency=10000
-    fi
-    sudo ./user/init_csd_edge $dataset_path $num_csd 10 $aggr_latency >> $output_path
-
+for num_csd in 1 2 4 8 16; do
+    echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
+    bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
+    sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path
 done

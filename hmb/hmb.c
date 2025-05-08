@@ -4,7 +4,7 @@
 #include <linux/io.h>
 #include "hmb.h"
 
-#define MEM_START 368 * 1024 * 1024 * 1024UL
+#define MEM_START 288 * 1024 * 1024 * 1024UL
 struct hmb_device hmb_dev = {
     .buf0 = {
         .virt_addr = NULL,

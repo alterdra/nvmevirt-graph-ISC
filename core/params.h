@@ -5,7 +5,7 @@
 #define SECTOR_SIZE 512
 #define NUM_SECTORS 8  // 4KB total
 
-#define MAX_NUM_CSDS 8
+#define MAX_NUM_CSDS 16
 #define MAX_PARTITION 128
 
 // Integer vertex and unweighted edges

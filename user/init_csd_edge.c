@@ -26,7 +26,9 @@ int num_csds;
 // imdt
 const char device[MAX_NUM_CSDS][20] = {
     "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1",
-    "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1"
+    "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1",
+    "/dev/nvme9n1", "/dev/nvme10n1", "/dev/nvme11n1", "/dev/nvme12n1",
+    "/dev/nvme13n1", "/dev/nvme14n1", "/dev/nvme15n1", "/dev/nvme16n1",
 };
 int fd[MAX_NUM_CSDS] = {0};
 
@@ -688,7 +690,7 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
-    printf("DQ with prefetching--------------");
+    printf("DQ_PF-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
     csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
@@ -833,8 +835,8 @@ void run_dq_hmb_size(void* buffer, int __num_iter)
 
 int main(int argc, char* argv[]) 
 {
-    if (argc<5) {
-		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters] [aggregation_time]\n");
+    if (argc<4) {
+		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters] [aggregation_time: optional]\n");
 		exit(-1);
 	}
     strcpy(dataset_path, argv[1]);
@@ -842,7 +844,8 @@ int main(int argc, char* argv[])
     sprintf(meta_path, "%s/meta", dataset_path);
     num_csds = atoi(argv[2]);
     int __num_iter = atoi(argv[3]);
-    aggregation_time = atoi(argv[4]);
+    if(argc >= 5)
+        aggregation_time = atoi(argv[4]);
 
     // Initialize graph dataset metadata
     FILE * fin_meta = fopen(meta_path, "r");
@@ -875,9 +878,9 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
 
     total_aggr_time = 0;
-    run_normal_grafu_dq(buffer, __num_iter);
+    // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
-    // run_dq_composition(buffer, __num_iter);
+    run_dq_composition(buffer, __num_iter);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
     cleanup(buffer);

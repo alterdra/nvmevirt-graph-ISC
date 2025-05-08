@@ -1,16 +1,19 @@
 #!/bin/bash
 
 # Unload existing kernel modules dynamically
-modules=("hmb")
+modules=()
 for i in {0..15}; do
     modules+=("nvmev$i")
 done
+modules+=("hmb")
 for module in "${modules[@]}"; do
     if lsmod | grep -q "^$module"; then
         echo "Removing $module..."
         sudo rmmod "$module"
     fi
 done
+
+make clean
 
 # Parse command-line options
 while getopts n:c:p:i:e:v: flag; do
@@ -32,13 +35,29 @@ num_csds=${num_csds:-4}
 
 echo "Number of CSDs: ${num_csds}"
 
-# Clean and rebuild modules
-make clean
+total_mem_gb=160
+memmap_size_gb=$((total_mem_gb / num_csds))  # 15G per entry
 
-# Define memory mappings for each module
-memmap_start=("128G" "158G" "188G" "218G" "248G" "278G" "308G" "338G")
-memmap_size=("30G" "30G" "30G" "30G" "30G" "30G" "30G" "30G")
-cpus=("1,2" "3,4" "5,6" "7,8" "9,10" "11,12" "13,14" "15,16")
+# Initialize arrays
+memmap_start=()
+memmap_size=()
+cpus=()
+base_start_gb=128
+for ((i = 0; i < num_csds; i++)); do
+    start_gb=$((base_start_gb + i * memmap_size_gb))
+    memmap_start+=("${start_gb}G")
+    memmap_size+=("${memmap_size_gb}G")
+    
+    # Assign CPU pairs: (2i+1, 2i+2)
+    cpu1=$((2 * i + 1))
+    cpu2=$((2 * i + 2))
+    cpus+=("${cpu1},${cpu2}")
+done
+
+# Output results
+echo "memmap_start=(${memmap_start[*]})"
+echo "memmap_size=(${memmap_size[*]})"
+echo "cpus=(${cpus[*]})"
 
 # Loop to build and load kernel modules
 for ID in $(seq 0 $((num_csds - 1))); do
