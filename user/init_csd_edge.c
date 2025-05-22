@@ -305,7 +305,7 @@ long long get_time_ns() {
 }
 
 // Graph processing utility functions
-int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_sync, int is_fvc, int is_prefetching)
+int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_sync, int is_fvc, int is_prefetching, int row_overlap)
 {
     struct nvme_user_io io;
     int ret;
@@ -318,6 +318,7 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_syn
         .num_iters = num_iters,
         .is_fvc = is_fvc,
         .is_prefetching = is_prefetching,
+        .row_overlap = row_overlap,
         .r = r, .c = c, .csd_id = csd_id,
         .num_partitions = num_partitions,
         .num_csds = num_csds,
@@ -434,7 +435,7 @@ int flush_csd_dram(void* buffer)
     int ret;
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
         hmb_dev.done2.virt_addr[csd_id] = false;
-        ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM, false, false);
+        ret = send_proc_edge(0, 0, csd_id, 0, 0, FLUSH_CSD_DRAM, false, false, false);
         if(ret < 0){
             cleanup(buffer);
             return -1;
@@ -453,7 +454,7 @@ int csd_proc_edge_loop_normal(void* buffer, int num_iter)
         for(int c = 0; c < num_partitions; c++){
             for(int r = 0; r < num_partitions; r++){
                 for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                    ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false);
+                    ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false, false);
                     if(ret < 0){
                         cleanup(buffer);
                         return -1;
@@ -486,7 +487,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(iter > 0 && c < r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -495,7 +496,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(r < c && iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true, false);
+                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true, false, false);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -509,7 +510,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                 // Diagnonal edge block
                 if(iter != num_iter - 1){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(c, c, csd_id, iter + 1, num_iter, SYNC, true, false);
+                        ret = send_proc_edge(c, c, csd_id, iter + 1, num_iter, SYNC, true, false, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -537,7 +538,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     if(c >= r)
                         continue;
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, SYNC, false, false, false);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -546,7 +547,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
                     aggr_edge_block(r, c, true);
                     if(iter != num_iter - 1){
                         for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true, false);
+                            ret = send_proc_edge(r, c, csd_id, iter + 1, num_iter, SYNC, true, false, false);
                             if(ret < 0){
                                 cleanup(buffer);
                                 return -1;
@@ -581,7 +582,7 @@ int csd_proc_edge_loop_grafu(void* buffer, int num_iter)
     return 0;
 }
 
-int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching)
+int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching, int row_overlap)
 {
     int ret;
 
@@ -600,7 +601,7 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -628,7 +629,7 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching);
+                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
                         if(ret < 0){
                             cleanup(buffer);
                             return -1;
@@ -686,14 +687,14 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
     printf("DQ--------------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false, false);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("DQ_PF-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 }
@@ -707,7 +708,7 @@ void run_dq_prefetch(void* buffer, int __num_iter)
     printf("DQ--------------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false, false);
     e = get_time_ns();
     cache_hit_rate = 0.0;
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -719,7 +720,7 @@ void run_dq_prefetch(void* buffer, int __num_iter)
     printf("DQ_PF-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
     e = get_time_ns();
     cache_hit_rate = 0.0;
     for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -727,6 +728,27 @@ void run_dq_prefetch(void* buffer, int __num_iter)
     }
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
+}
+
+void run_dq_row_overlap(void* buffer, int __num_iter)
+{
+    float cache_hit_rate;
+    long long s, e;
+    int ms_ns_ratio = 1000000;
+
+    printf("DQ_PF------------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+
+    printf("DQ_PF_RO---------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, true);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 }
 
 void run_dq_cache_hitrate(void* buffer, int __num_iter)
@@ -746,7 +768,7 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
         }
 
         s = get_time_ns();
-        csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter, false, false);
         e = get_time_ns();
         printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
         total_time += (e - s) / ms_ns_ratio;
@@ -776,7 +798,7 @@ void run_dq_composition(void* buffer, int __num_iter)
         }
 
         s = get_time_ns();
-        csd_proc_edge_loop_dual_queue(buffer, __num_iter, true);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
         e = get_time_ns();
         printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
         total_time += (e - s) / ms_ns_ratio;
@@ -828,7 +850,7 @@ void run_dq_hmb_size(void* buffer, int __num_iter)
         perror("Failed to create monitoring thread");
         return;
     }
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
     atomic_store(&monitor_running, false);
     pthread_join(monitor_thread, NULL);
 }
@@ -880,9 +902,10 @@ int main(int argc, char* argv[])
     total_aggr_time = 0;
     // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
-    run_dq_composition(buffer, __num_iter);
+    // run_dq_composition(buffer, __num_iter);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
+    run_dq_row_overlap(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

@@ -10,8 +10,8 @@
 #include <errno.h>
 
 #define MB_256 (256 * 1024 * 1024UL)
-#define GB_20 (20LL * 1024 * 1024 * 1024)
-#define HMB_SIZE GB_20
+#define GB_40 (40LL * 1024 * 1024 * 1024)
+#define HMB_SIZE GB_40
 
 struct hmb_buffer {
     volatile float *virt_addr;  /* Virtual address of mapped memory */

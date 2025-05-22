@@ -4,6 +4,7 @@
 # Ex: bash test_scalibity.sh Twitter-2010.pl 5 11G 160M
 # Ex: bash test_scalibity.sh Friendster.pl 5 14G 250M
 # Ex: bash test_scalibity.sh Uk-2007.pl 5 30G 414M
+# Ex: bash test_scalibity.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -50,7 +51,12 @@ vertex_alloc_human=$(convert_to_human $vertex_alloc)
 
 num_partition=$(awk 'NR==1{print $4}' "$dataset_path/meta")
 echo "Number of partitions: $num_partition"
-output_path="experiments/scaling_${dataset_path}_${x_percentage}%_p${num_partition}.txt"
+
+echo "Output path: $dataset_path"
+cleaned_path="${dataset_path##*/}"
+echo "Cleaned path: $cleaned_path"
+
+output_path="experiments/scaling_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
 
 cd user
 make

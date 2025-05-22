@@ -14,6 +14,7 @@ struct PROC_EDGE
     __u32 iter, num_iters;
     __u32 is_fvc;
     __u32 is_prefetching;
+    __u32 row_overlap;
 
     __u32 nsid;     // Namespace id, used by kernel module
 

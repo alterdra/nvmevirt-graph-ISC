@@ -64,13 +64,4 @@ else
     bash init_csds.sh -n $total_num_csd -e $edge_alloc_human -v $vertex_alloc_human
 fi
 
-# Loop through the number of CSDs
-for num_csd in 8; do
-    if [ "$num_csd" -eq 1 ]; then
-        aggr_latency=0
-    else
-        aggr_latency=10000
-    fi
-    sudo ./user/init_csd_edge $dataset_path $num_csd 10 $aggr_latency >> $output_path
-
-done
+sudo ./user/init_csd_edge $dataset_path $total_num_csd 10 >> $output_path

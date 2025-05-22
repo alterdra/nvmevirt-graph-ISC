@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Ex: bash test_aggr.sh LiveJournal.pl 3 526M 18M
-# Ex: bash test_aggr.sh Twitter-2010.pl 1 11G 160M
-# Ex: bash test_aggr.sh Friendster.pl 1 14G 250M
-# Ex: bash test_aggr.sh Uk-2007.pl 1 30G 414M
-# Ex: bash test_aggr.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# Ex: bash test_row_overlap.sh LiveJournal.pl 5 526M 18M
+# Ex: bash test_row_overlap.sh Twitter-2010.pl 5 11G 160M
+# Ex: bash test_row_overlap.sh Friendster.pl 5 14G 250M
+# Ex: bash test_row_overlap.sh Uk-2007.pl 5 30G 414M
+# Ex: bash test_row_overlap.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -31,9 +31,7 @@ convert_to_human() {
     fi
 }
 
-num_csd=8
-num_iter=10
-
+# Read input arguments
 dataset_path=$1
 x_percentage=$2
 edge_size_human=$3
@@ -58,28 +56,15 @@ echo "Output path: $dataset_path"
 cleaned_path="${dataset_path##*/}"
 echo "Cleaned path: $cleaned_path"
 
-output_path="experiments/cache_eviction/aggr_${cleaned_path}_${x_percentage}%_p${num_partition}_c${num_csd}.txt"
+output_path="experiments/row_overlap_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
 
 cd user
 make
 cd ..
 
-# 20000 40000 80000 160000 320000
-
-# LIFO
-bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
-for aggr_time in 10000 20000 30000; do
-    echo "LIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human vertex_size=$vertex_alloc_human $for num_csd=$num_csd"
-    echo "LIFO for aggregation time $aggr_time" >> $output_path
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
-    printf "\n" >> $output_path
-done
-
-# FIFO
-bash init_csds.sh  -n $num_csd -e $edge_alloc_human -v $vertex_alloc_human
-for aggr_time in 10000 20000 30000; do
-    echo "FIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human for num_csd=$num_csd"
-    echo "FIFO for aggregation time $aggr_time" >> $output_path
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
-    printf "\n" >> $output_path
+# Loop through the number of CSDs
+for num_csd in 4 8; do
+    echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
+    bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
+    sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path
 done

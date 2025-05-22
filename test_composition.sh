@@ -4,6 +4,9 @@
 # Ex: bash test_composition.sh Twitter-2010.pl 5 11G 160M
 # Ex: bash test_composition.sh Friendster.pl  5 14G 250M
 # Ex: bash test_composition.sh Uk-2007.pl 5 30G 414M
+# Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# sudo mount /dev/sdf1 storage_sdf
+# 203ec6ab-4d40-4794-bfc8-e6807b5bbb61
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -50,7 +53,12 @@ vertex_alloc_human=$(convert_to_human $vertex_alloc)
 
 num_partition=$(awk 'NR==1{print $4}' "$dataset_path/meta")
 echo "Number of partitions: $num_partition"
-output_path="experiments/composition_${dataset_path}_${x_percentage}%_p${num_partition}.txt"
+
+echo "Output path: $dataset_path"
+cleaned_path="${dataset_path##*/}"
+echo "Cleaned path: $cleaned_path"
+
+output_path="experiments/composition_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
 
 cd user
 make

@@ -221,6 +221,23 @@ void __do_perform_edge_proc(void)
 				    hmb_dev.buf2.virt_addr[v + offset] = 0.0;
 				}
 			}
+
+			// To use a row of edges that are aggregated to overlap
+			if(task.row_overlap && get_queue_size(future_task_queue)){
+				struct queue_node *node;
+				bool found = false;
+				mutex_lock(&future_task_queue->lock);
+				list_for_each_entry(node, &future_task_queue->head, list) {
+					if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
+						found = true;
+						break;
+					}
+				}
+				if(found && node){
+					task = node->proc_edge_struct;
+				}
+				mutex_unlock(&future_task_queue->lock);
+			}
 			// Future task ready
 			future_aggr_ready = hmb_dev.done_partition.virt_addr[task.r];
 		}
@@ -233,7 +250,28 @@ void __do_perform_edge_proc(void)
 			long long partition_size;
 			int num_vertices;
 
-			queue_dequeue(future_task_queue, &task);
+			if(!task.row_overlap)
+				queue_dequeue(future_task_queue, &task);
+			else{
+				// Find the first task that is ready
+				struct queue_node *node;
+				bool found = false;
+				mutex_lock(&future_task_queue->lock);
+				list_for_each_entry(node, &future_task_queue->head, list) {
+					if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
+						task = node->proc_edge_struct;
+						found = true;
+						break;
+					}
+				}
+				if(found && node){
+					list_del(&node->list);
+					future_task_queue->size--;
+					kfree(node);
+				}
+				mutex_unlock(&future_task_queue->lock);
+			}
+
 			num_vertices = task.num_vertices;
 		
 		EXEC_START_TIME = ktime_get_ns();
