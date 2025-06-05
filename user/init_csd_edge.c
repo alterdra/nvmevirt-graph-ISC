@@ -739,14 +739,21 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     printf("DQ_PF------------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 0);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("DQ_PF_RO---------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, true);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 1);
+    e = get_time_ns();
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+
+    printf("DQ_PF_RO_LARGE---");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 2);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 }

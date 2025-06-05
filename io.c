@@ -223,6 +223,7 @@ void __do_perform_edge_proc(void)
 			}
 
 			// To use a row of edges that are aggregated to overlap
+			// If the row_overlap == 1 or 2
 			if(task.row_overlap && get_queue_size(future_task_queue)){
 				struct queue_node *node;
 				bool found = false;
@@ -250,9 +251,9 @@ void __do_perform_edge_proc(void)
 			long long partition_size;
 			int num_vertices;
 
-			if(!task.row_overlap)
+			if(task.row_overlap == 0)
 				queue_dequeue(future_task_queue, &task);
-			else{
+			else if(task.row_overlap == 1){
 				// Find the first task that is ready
 				struct queue_node *node;
 				bool found = false;
@@ -268,6 +269,29 @@ void __do_perform_edge_proc(void)
 					list_del(&node->list);
 					future_task_queue->size--;
 					kfree(node);
+				}
+				mutex_unlock(&future_task_queue->lock);
+			}
+			else{	// task.row_overlap == 2
+				// Find the task that has more pages in CSD DRAM
+				struct queue_node *node, *max_node = NULL;
+				bool found = false;
+				long long task_edge_block_size = 0;
+				mutex_lock(&future_task_queue->lock);
+				list_for_each_entry(node, &future_task_queue->head, list) {
+					if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
+						task_edge_block_size = get_edge_block_size(edge_buf, node->proc_edge_struct.r, node->proc_edge_struct.c);
+						if(!found || task_edge_block_size > task.edge_block_len){
+							task = node->proc_edge_struct;
+							max_node = node;
+							found = true;
+						}
+					}
+				}
+				if(found && max_node){
+					list_del(&max_node->list);
+					future_task_queue->size--;
+					kfree(max_node);
 				}
 				mutex_unlock(&future_task_queue->lock);
 			}
