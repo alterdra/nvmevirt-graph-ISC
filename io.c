@@ -339,7 +339,7 @@ void __do_perform_edge_proc(void)
 				else
 					pipeline_ratio = 1.0 * edge_proc_time / task.nsecs_target;
 
-				prefetch_ratio = ratio + pipeline_ratio - 1.0;
+				prefetch_ratio = pipeline_ratio - ratio;
 				if(prefetch_ratio < 0) prefetch_ratio = 0;
 
 				ratio -= pipeline_ratio;
@@ -361,8 +361,7 @@ void __do_perform_edge_proc(void)
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);
 							int is_prefetch = 1;
-							if(task.is_fvc && task.iter == next_task.iter
-							|| !task.is_fvc && task.iter + 1 == next_task.iter)
+							if(task.is_fvc && !next_task.is_fvc)
 								is_prefetch = 2;
 							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, is_prefetch);
 						}
@@ -417,7 +416,7 @@ void __do_perform_edge_proc(void)
 			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task.r, task.c, task.edge_block_len, false);
 			if(invalidation_at_future_value){
-        		if(task.iter == 0 && task.r > task.c)	// lower triangle
+        		if(task.iter == 0 && task.r > task.c || task.is_fvc)	// lower triangle
         			invalidate_edge_block(edge_buf, task.r, task.c);
 			}
 			if(task.edge_block_len == 0)
@@ -434,7 +433,7 @@ void __do_perform_edge_proc(void)
 				else
 					pipeline_ratio = 1.0 * edge_proc_time / task.nsecs_target;
 
-				prefetch_ratio = ratio + pipeline_ratio - 1.0;
+				prefetch_ratio = pipeline_ratio - ratio;
 				if(prefetch_ratio < 0) prefetch_ratio = 0;
 
 				ratio -= pipeline_ratio;
@@ -456,8 +455,7 @@ void __do_perform_edge_proc(void)
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);
 							int is_prefetch = 1;
-							if(task.is_fvc && task.iter == next_task.iter
-							|| !task.is_fvc && task.iter + 1 == next_task.iter)
+							if(task.is_fvc && !next_task.is_fvc)
 								is_prefetch = 2;
 							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, is_prefetch);
 						}

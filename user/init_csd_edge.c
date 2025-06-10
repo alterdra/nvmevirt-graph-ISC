@@ -735,10 +735,10 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     float cache_hit_rate;
     long long s, e;
     int ms_ns_ratio = 1000000;
-    char prefetching_str[4][20] = {"No Prefetch", "Pipeline", "Pipeline + Prefetch Future Only", "Pipeline + Prefetch All"};
-    char row_overlap_str[3][20] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
+    char prefetching_str[4][40] = {"No Prefetch", "Pipeline", "Pipeline + Prefetch Future Only", "Pipeline + Prefetch All"};
+    char row_overlap_str[3][40] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
 
-    for(int prefetching = 0; prefetching <= 3; prefetching++)
+    for(int prefetching = 3; prefetching <= 3; prefetching++)
     {
         for(int row_overlap = 2; row_overlap <= 2; row_overlap++)
         {
