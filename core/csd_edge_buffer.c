@@ -8,6 +8,10 @@ void edge_buffer_init(struct edge_buffer *buf)
     buf->capacity = edge_buffer_size;
     buf->hit_cnt = buf->total_access_cnt = 0;
 
+    buf->prefetched_r = -1;
+    buf->prefetched_c = -1;
+    buf->prefetched_iter = -1;
+
     printk(KERN_INFO "Edge buffer size: %lld", buf->capacity);
     printk(KERN_INFO "Cache eviction policy: %s", cache_eviction_policy);
     printk(KERN_INFO "Partial eviction?: %d", partial_edge_eviction);
@@ -27,6 +31,10 @@ void edge_buffer_destroy(struct edge_buffer *buf)
     }
     buf->size = 0;
     buf->hit_cnt = buf->total_access_cnt = 0;
+
+    buf->prefetched_r = -1;
+    buf->prefetched_c = -1;
+    buf->prefetched_iter = -1;
 
     // Todo: execution time composition to a new header file
     buf->edge_proc_time = buf->edge_internal_io_time = buf->edge_external_io_time = 0;

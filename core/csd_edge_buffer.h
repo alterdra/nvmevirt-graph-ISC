@@ -21,6 +21,10 @@ struct edge_buffer {
     long long size, capacity;
     long long total_access_cnt, hit_cnt;
 
+    // For prefetching correctness
+    int prefetched_r, prefetched_c;
+    int prefetched_iter;
+
     // Todo: execution time composition to a new header file
     long long edge_proc_time, edge_internal_io_time, edge_external_io_time;
 };
