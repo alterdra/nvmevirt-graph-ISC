@@ -11,7 +11,7 @@
 struct edge_buffer_unit {
     long long size;
     int r, c;
-    bool is_prefetched_normal;
+    int is_prefetched_normal;
     struct list_head list;
 };
 
@@ -33,8 +33,8 @@ extern unsigned long edge_buffer_size;
 void edge_buffer_init(struct edge_buffer *buf);
 void edge_buffer_destroy(struct edge_buffer *buf);
 
-long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, int c, long long size, bool is_prefetch);
-void evict_edge_block(struct edge_buffer *buf, bool* aggregated, long long size);
+long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, int c, long long size, int is_prefetch);
+long long evict_edge_block(struct edge_buffer *buf, bool* aggregated, struct edge_buffer_unit* inserted_unit, int is_prefetch);
 void invalidate_edge_block(struct edge_buffer *buf, int r, int c);
 void invalidate_edge_block_fifo(struct edge_buffer *buf);
 long long get_edge_block_size(struct edge_buffer *buf, int r, int c);
