@@ -130,7 +130,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	long long partition_size;
 
 	// Edge block read I/O
-	size_not_in_cache = access_edge_block(edge_buf, task.r, task.c, task.edge_block_len, false);
+	size_not_in_cache = access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task.r, task.c, task.edge_block_len, false);
 	ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
 	end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 	// NVMEV_INFO("Edge-%d-%d I/O time: %lld", task.r, task.c, (long long) (task.nsecs_target * ratio));

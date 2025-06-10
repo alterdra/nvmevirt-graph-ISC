@@ -735,27 +735,27 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     float cache_hit_rate;
     long long s, e;
     int ms_ns_ratio = 1000000;
+    char prefetching_str[3][20] = {"No Prefetch", "Pipeline", "Pipeline + Prefetch Future Only", "Pipeline + Prefetch All"};
+    char row_overlap_str[3][20] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
 
-    printf("DQ_PF------------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 0);
-    e = get_time_ns();
-    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
-
-    printf("DQ_PF_RO---------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 1);
-    e = get_time_ns();
-    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
-
-    printf("DQ_PF_RO_LARGE---");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 2);
-    e = get_time_ns();
-    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    for(int prefetching = 0; prefetching <= 3; prefetching++)
+    {
+        for(int row_overlap = 2; row_overlap <= 2; row_overlap++)
+        {
+            printf("DQ, %s, %s------", prefetching_str[prefetching], row_overlap_str[row_overlap]);
+            init_csds_data(fd, buffer);
+            s = get_time_ns();
+            csd_proc_edge_loop_dual_queue(buffer, __num_iter, prefetching, row_overlap);
+            e = get_time_ns();
+            cache_hit_rate = 0.0;
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+            }
+            printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+            printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
+        }
+        printf("\n");
+    }
 }
 
 void run_dq_cache_hitrate(void* buffer, int __num_iter)

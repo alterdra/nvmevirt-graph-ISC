@@ -65,6 +65,6 @@ cd ..
 # Loop through the number of CSDs
 for num_csd in 4 8; do
     echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
-    bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
+    bash init_csds.sh -n $num_csd -c PRIORITY -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
     sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path
 done

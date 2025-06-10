@@ -34,7 +34,7 @@ void edge_buffer_destroy(struct edge_buffer *buf)
     INIT_LIST_HEAD(&buf->head);
 }
 
-long long access_edge_block(struct edge_buffer *buf, int r, int c, long long size, bool is_prefetch)
+long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, int c, long long size, bool is_prefetch)
 {
     long long curr_size;
     if(size == 0)
@@ -44,7 +44,7 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
     if(curr_size == -1){
         struct edge_buffer_unit *unit;
         // Edge block not in cache
-        evict_edge_block(buf, size);
+        evict_edge_block(buf, aggregated, size);
         unit = kmalloc(sizeof(struct edge_buffer_unit), GFP_KERNEL);
         if (!unit) {
             pr_err("Failed to allocate memory for new csd edge buffer unit\n");
@@ -63,7 +63,7 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
     // Partial (or full) edge block in cache, must be list head for FVC access pattern
     else{
         if(partial_edge_eviction){
-            evict_edge_block(buf, size - curr_size);
+            evict_edge_block(buf, aggregated, size - curr_size);
         }
         if(!is_prefetch){
             buf->hit_cnt += curr_size / PAGE_SIZE;
@@ -75,7 +75,7 @@ long long access_edge_block(struct edge_buffer *buf, int r, int c, long long siz
     }
 }
 
-void evict_edge_block(struct edge_buffer *buf, long long size) 
+void evict_edge_block(struct edge_buffer *buf, bool* aggregated, long long size) 
 {
     struct edge_buffer_unit *unit;
     while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
@@ -86,6 +86,19 @@ void evict_edge_block(struct edge_buffer *buf, long long size)
         }
         else if(strcmp(cache_eviction_policy, "FIFO") == 0){
             unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
+        }
+        else if(strcmp(cache_eviction_policy, "PRIORITY") == 0){
+            struct edge_buffer_unit *evict_unit = NULL;
+            list_for_each_entry(unit, &buf->head, list) {
+                if(evict_unit == NULL || lower(unit, evict_unit, aggregated)){
+                    evict_unit = unit;
+                }
+                // Early stop if we find a unit that is not aggregated or normal task
+                // if(!aggregated[unit->r] || unit->r.is_prefetched_normal){
+                //     break;
+                // }
+            }
+            unit = evict_unit;
         }
         else{
             unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
@@ -147,4 +160,19 @@ long long get_edge_block_size(struct edge_buffer *buf, int r, int c)
         }
     }
     return -1;      // Not found
+}
+
+bool lower(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, bool* aggregated){
+    // For the same priority
+    // FIFO for future edges (since we process latest future that the row is ready)
+    // Todo: LIFO for prefetched normal
+    if(!aggregated[evict_unit->r])
+        return false;
+    if(!aggregated[unit->r])
+        return true; 
+    if(evict_unit->is_prefetched_normal)
+        return false;
+    if(unit->is_prefetched_normal)
+        return true;   
+    return false;   
 }
