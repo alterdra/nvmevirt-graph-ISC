@@ -599,6 +599,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
                 for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == num_partitions - 1))
+                            hmb_dev.done1.virt_addr[id] = true; // size = 0 && not the last task, mark as done
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
                         ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
@@ -627,6 +629,8 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
                 for(int r = 0; r < num_partitions; r++){
                     for(int csd_id = 0; csd_id < num_csds; csd_id++){
                         int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                        if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == 0))
+                            hmb_dev.done1.virt_addr[id] = true; // No edge block, mark as done
                         if(hmb_dev.done1.virt_addr[id])
                             continue;
                         ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
@@ -735,12 +739,12 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     float cache_hit_rate;
     long long s, e;
     int ms_ns_ratio = 1000000;
-    char prefetching_str[4][40] = {"No Prefetch", "Pipeline", "Pipeline + Prefetch Future Only", "Pipeline + Prefetch All"};
+    char prefetching_str[4][40] = {"No Prefetch", "Prefetch Current Edge", "Prefetch All"};
     char row_overlap_str[3][40] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
 
-    for(int prefetching = 0; prefetching <= 3; prefetching++)
+    for(int prefetching = 0; prefetching <= 2; prefetching++)
     {
-        for(int row_overlap = 0; row_overlap <= 0; row_overlap++)
+        for(int row_overlap = 0; row_overlap <= 2; row_overlap++)
         {
             printf("DQ, %s, %s------", prefetching_str[prefetching], row_overlap_str[row_overlap]);
             init_csds_data(fd, buffer);

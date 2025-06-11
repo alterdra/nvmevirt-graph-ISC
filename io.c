@@ -346,6 +346,8 @@ void __do_perform_edge_proc(void)
 				prefetch_ratio = pipeline_ratio - ratio;
 				if(prefetch_ratio < 0) prefetch_ratio = 0;
 
+				// edge_processing_time * ratio is the time that we can prefetch the current edge block
+				edge_buf->hit_cnt += min((long long) (pipeline_ratio * ratio * task.edge_block_len), size_not_in_cache) / PAGE_SIZE;
 				ratio -= pipeline_ratio;
 				if(ratio < 0) ratio = 0;
 					
@@ -366,7 +368,7 @@ void __do_perform_edge_proc(void)
 							edge_buf->prefetched_c = next_task.c;
 							edge_buf->prefetched_iter = next_task.iter;
 						}
-						else if(get_queue_size(normal_task_queue) && task.is_prefetching >= 3)
+						else if(get_queue_size(normal_task_queue))
 						{
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);
@@ -453,6 +455,7 @@ void __do_perform_edge_proc(void)
 				prefetch_ratio = pipeline_ratio - ratio;
 				if(prefetch_ratio < 0) prefetch_ratio = 0;
 
+				edge_buf->hit_cnt += min((long long) (pipeline_ratio * ratio * task.edge_block_len), size_not_in_cache) / PAGE_SIZE;
 				ratio -= pipeline_ratio;
 				if(ratio < 0) ratio = 0;
 					
@@ -473,7 +476,7 @@ void __do_perform_edge_proc(void)
 							edge_buf->prefetched_c = next_task.c;
 							edge_buf->prefetched_iter = next_task.iter;
 						}
-						else if(get_queue_size(normal_task_queue) && task.is_prefetching >= 3)
+						else if(get_queue_size(normal_task_queue))
 						{
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);
