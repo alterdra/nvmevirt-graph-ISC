@@ -744,7 +744,7 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
 
     for(int prefetching = 0; prefetching <= 2; prefetching++)
     {
-        for(int row_overlap = 0; row_overlap <= 2; row_overlap++)
+        for(int row_overlap = 2; row_overlap <= 2; row_overlap++)
         {
             printf("DQ, %s, %s------", prefetching_str[prefetching], row_overlap_str[row_overlap]);
             init_csds_data(fd, buffer);
@@ -794,7 +794,7 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds / experiment_num);
 }
 
-void run_dq_composition(void* buffer, int __num_iter)
+void run_dq_composition(void* buffer, int __num_iter, bool prefetching)
 {
     int experiment_num = 1;
     long long total_time = 0;
@@ -809,7 +809,7 @@ void run_dq_composition(void* buffer, int __num_iter)
         }
 
         s = get_time_ns();
-        csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter, prefetching, 2);
         e = get_time_ns();
         printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
         total_time += (e - s) / ms_ns_ratio;
@@ -825,6 +825,71 @@ void run_dq_composition(void* buffer, int __num_iter)
         printf("Avg. edge IO time (Internal I/O): %lld ms\n", edge_internal_io_time / num_csds);
         printf("Avg. vertex IO time (External I/O): %lld ms\n", edge_external_io_time / num_csds);
         printf("Total aggregation time: %lld ms\n", num_csds == 1 ? 0 : total_aggr_time / ms_ns_ratio);
+        printf("\n");
+    }
+}
+
+void run_all_composition(void* buffer, int __num_iter)
+{
+    long long total_time = 0;
+    long long s, e;
+    int ms_ns_ratio = 1000000;
+
+    for(int i = 0; i < 4; i++){
+        if(i == 0){
+            if(init_csds_data(fd, buffer) == -1){
+                printf("Init CSD edge data failed");
+                break;
+            }
+            printf("Normal-----------");
+            s = get_time_ns();
+            csd_proc_edge_loop_normal(buffer, __num_iter);
+            e = get_time_ns();
+        }
+        else if(i == 1){
+            if(init_csds_data(fd, buffer) == -1){
+                printf("Init CSD edge data failed");
+                break;
+            }
+            printf("Grafu-----------");
+            s = get_time_ns();
+            csd_proc_edge_loop_grafu(buffer, __num_iter);
+            e = get_time_ns();
+        }
+        else if(i == 2){
+            if(init_csds_data(fd, buffer) == -1){
+                printf("Init CSD edge data failed");
+                break;
+            }
+            printf("DQ--------------");
+            s = get_time_ns();
+            csd_proc_edge_loop_dual_queue(buffer, __num_iter, false, 0);
+            e = get_time_ns();
+        }
+        else{
+            if(init_csds_data(fd, buffer) == -1){
+                printf("Init CSD edge data failed");
+                break;
+            }
+            printf("DQ_PF-----------");
+            s = get_time_ns();
+            csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, 0);
+            e = get_time_ns();
+        }
+        
+        printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+        total_time += (e - s) / ms_ns_ratio;
+
+        long long edge_proc_time = 0, edge_internal_io_time = 0, edge_external_io_time = 0;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            // Already being divided by ms_ns_ratio in kernel modules
+            edge_proc_time += hmb_dev.buf2.virt_addr[csd_id + num_csds];
+            edge_internal_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 2];
+            edge_external_io_time += hmb_dev.buf2.virt_addr[csd_id + num_csds * 3];
+        }
+        printf("Avg. edge processing time: %lld ms\n", edge_proc_time / num_csds);
+        printf("Avg. edge IO time (Internal I/O): %lld ms\n", edge_internal_io_time / num_csds);
+        printf("Avg. vertex IO time (External I/O): %lld ms\n", edge_external_io_time / num_csds);
         printf("\n");
     }
 }
@@ -913,10 +978,11 @@ int main(int argc, char* argv[])
     total_aggr_time = 0;
     // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
-    // run_dq_composition(buffer, __num_iter);
+    // run_dq_composition(buffer, __num_iter, true);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
-    run_dq_row_overlap(buffer, __num_iter);
+    // run_dq_row_overlap(buffer, __num_iter);
+    run_all_composition(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;

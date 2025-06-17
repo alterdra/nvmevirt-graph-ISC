@@ -137,11 +137,14 @@ void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_pre
 	edge_io_time = task_prefetch.nsecs_target;
 	ratio = 1.0 * (*edge_proc_time) / edge_io_time;
 	if(ratio > 1.0) ratio = 1.0;
+
 	// NVMEV_INFO("Prefetching edge block %d-%d, size_in_cache: %lld, edge_block_len: %lld, edge_proc_time: %lld, edge_io_time: %lld",
 	// 	task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len, *edge_proc_time, edge_io_time);
 	*edge_proc_time -= (long long) (edge_io_time * (1.0 * (task_prefetch.edge_block_len - size_in_cache) / task_prefetch.edge_block_len));
 
+	edge_buf->prefetched_size = size_in_cache;
 	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), task_prefetch.edge_block_len);
+	edge_buf->prefetched_size = (long long)size_in_cache - edge_buf->prefetched_size;
 	// NVMEV_INFO("After Prefetching edge block %d-%d, size_in_cache: %lld, edge_block_len: %lld, edge_proc_time: %lld, edge_io_time: %lld",
 	// 	task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len, *edge_proc_time, edge_io_time);
 	access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task_prefetch.r, task_prefetch.c, size_in_cache, is_prefetch);
@@ -314,6 +317,10 @@ void __do_perform_edge_proc(void)
 				task.csd_id,
 				edge_buf->prefetched_r, edge_buf->prefetched_c, edge_buf->prefetched_iter,
 				task.r, task.c, task.iter);
+			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+				edge_buf->prefetch_block_hit_cnt++;
+			if(edge_buf->prefetched_r != -1 && edge_buf->prefetched_c != -1)
+				edge_buf->total_prefetch_block_cnt++;
 			
 			num_vertices = task.num_vertices;
 		
@@ -338,6 +345,12 @@ void __do_perform_edge_proc(void)
 			if(task.is_prefetching >= 1)
 			{
 				double pipeline_ratio, prefetch_ratio;
+
+				if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+					edge_buf->prefetch_hit_cnt += edge_buf->prefetched_size;
+				edge_buf->total_prefetch_cnt += edge_buf->prefetched_size;
+				edge_buf->prefetched_size = 0;
+
 				if(task.nsecs_target == 0)
 					pipeline_ratio = 0;
 				else
@@ -352,23 +365,36 @@ void __do_perform_edge_proc(void)
 				if(ratio < 0) ratio = 0;
 					
 				// If the remaining edge_proc_time is not zero, we can prefetch the next edge block
-				if(task.is_prefetching >= 2){
+				if(task.is_prefetching >= 2)
+				{
 					long long tmp_edge_proc_time = (long long) (prefetch_ratio * task.nsecs_target);
+
 					edge_buf->prefetched_r = -1;
 					edge_buf->prefetched_c = -1;
 					edge_buf->prefetched_iter = -1;
 					if(tmp_edge_proc_time > 0){
 						struct PROC_EDGE next_task;
-						if(get_queue_size(future_task_queue) 
-						&& find_next_future_task(future_task_queue, hmb_dev.done_partition.virt_addr, &next_task, false))
+						if(get_queue_size(future_task_queue))
 						{	
 							NVMEV_INFO("Prefetch future");
-							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
-							edge_buf->prefetched_r = next_task.r;
-							edge_buf->prefetched_c = next_task.c;
-							edge_buf->prefetched_iter = next_task.iter;
+							struct queue_node *node;
+							int found_cnt = 0;
+							list_for_each_entry_reverse(node, &future_task_queue->head, list) {
+								if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
+									next_task = node->proc_edge_struct;
+									prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
+									if(found_cnt == 0){
+										edge_buf->prefetched_r = next_task.r;
+										edge_buf->prefetched_c = next_task.c;
+										edge_buf->prefetched_iter = next_task.iter;
+									}
+									found_cnt++;
+									if(tmp_edge_proc_time <= 0)
+										break;
+								}
+							}
 						}
-						else if(get_queue_size(normal_task_queue))
+						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);
@@ -423,6 +449,11 @@ void __do_perform_edge_proc(void)
 				task.csd_id,
 				edge_buf->prefetched_r, edge_buf->prefetched_c, edge_buf->prefetched_iter,
 				task.r, task.c, task.iter);
+			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+				edge_buf->prefetch_block_hit_cnt++;
+			if(edge_buf->prefetched_r != -1 && edge_buf->prefetched_c != -1)
+				edge_buf->total_prefetch_block_cnt++;
+
 			num_vertices = task.num_vertices;
 
 		EXEC_START_TIME = ktime_get_ns();
@@ -447,6 +478,12 @@ void __do_perform_edge_proc(void)
 			if(task.is_prefetching >= 1)
 			{
 				double pipeline_ratio, prefetch_ratio;
+
+				if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+					edge_buf->prefetch_hit_cnt += edge_buf->prefetched_size;
+				edge_buf->total_prefetch_cnt += edge_buf->prefetched_size;
+				edge_buf->prefetched_size = 0;
+
 				if(task.nsecs_target == 0)
 					pipeline_ratio = 0;
 				else
@@ -467,16 +504,27 @@ void __do_perform_edge_proc(void)
 					edge_buf->prefetched_iter = -1;
 					if(tmp_edge_proc_time > 0){
 						struct PROC_EDGE next_task;
-						if(get_queue_size(future_task_queue) 
-						&& find_next_future_task(future_task_queue, hmb_dev.done_partition.virt_addr, &next_task, false))
+						if(get_queue_size(future_task_queue))
 						{	
 							NVMEV_INFO("Prefetch future");
-							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
-							edge_buf->prefetched_r = next_task.r;
-							edge_buf->prefetched_c = next_task.c;
-							edge_buf->prefetched_iter = next_task.iter;
+							struct queue_node *node;
+							int found_cnt = 0;
+							list_for_each_entry_reverse(node, &future_task_queue->head, list) {
+								if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
+									next_task = node->proc_edge_struct;
+									prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
+									if(found_cnt == 0){
+										edge_buf->prefetched_r = next_task.r;
+										edge_buf->prefetched_c = next_task.c;
+										edge_buf->prefetched_iter = next_task.iter;
+									}
+									found_cnt++;
+									if(tmp_edge_proc_time <= 0)
+										break;
+								}
+							}
 						}
-						else if(get_queue_size(normal_task_queue))
+						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
 							NVMEV_INFO("Prefetch Normal");
 							get_queue_front(normal_task_queue, &next_task);

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Ex: bash test_composition.sh LiveJournal.pl 5 526M 18M
-# Ex: bash test_composition.sh Twitter-2010.pl 5 11G 160M
-# Ex: bash test_composition.sh Friendster.pl  5 14G 250M
-# Ex: bash test_composition.sh Uk-2007.pl 5 30G 414M
-# Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# Ex: bash test_all_composition.sh LiveJournal.pl 5 526M 18M
+# Ex: bash test_all_composition.sh Twitter-2010.pl 5 11G 160M
+# Ex: bash test_all_composition.sh Friendster.pl  5 14G 250M
+# Ex: bash test_all_composition.sh Uk-2007.pl 5 30G 414M
+# Ex: bash test_all_composition.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
 # sudo mount /dev/sdf1 storage_sdf
 # 203ec6ab-4d40-4794-bfc8-e6807b5bbb61
 
@@ -58,14 +58,14 @@ echo "Output path: $dataset_path"
 cleaned_path="${dataset_path##*/}"
 echo "Cleaned path: $cleaned_path"
 
-output_path="experiments/composition_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
+output_path="experiments/all_composition_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
 
 cd user
 make
 cd ..
 
 # Loop through the number of CSDs
-for num_csd in 8 16; do
+for num_csd in 16; do
     echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
     bash init_csds.sh -n $num_csd -c PRIORITY -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
     sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path

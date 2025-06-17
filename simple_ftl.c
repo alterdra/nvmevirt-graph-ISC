@@ -113,6 +113,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	int num_vertices = task.num_vertices;
 	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
 	struct vertex_buffer *vertex_buf = &nvmev_vdev->vertex_buf;
+	long long EXEC_START_TIME, EXEC_END_TIME;
 
 	// Initialize the edge starting addresses
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
@@ -129,6 +130,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 	double ratio;
 	long long partition_size;
 
+EXEC_START_TIME = ktime_get_ns();
 	// Edge block read I/O
 	size_not_in_cache = access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task.r, task.c, task.edge_block_len, false);
 	ratio = task.edge_block_len == 0 ? 1 : (1.0 * size_not_in_cache / task.edge_block_len);
@@ -138,7 +140,10 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		if (kthread_should_stop())
 			return;
 	}
+EXEC_END_TIME = ktime_get_ns();
+edge_buf->edge_internal_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 
+EXEC_START_TIME = ktime_get_ns();
 	// Vertex parition read I/O
 	partition_size = (long long) num_vertices * VERTEX_SIZE / task.num_partitions;
 	size_not_in_cache = access_partition(vertex_buf, task.r, task.iter, partition_size);
@@ -148,6 +153,8 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		if (kthread_should_stop())
 			return;
 	}
+EXEC_END_TIME = ktime_get_ns();
+edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 
 	// Initialize vertex source and destination addresses
 	if(task.is_fvc == 0){
@@ -159,6 +166,7 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		src = hmb_dev.buf1.virt_addr;
 	}
 
+EXEC_START_TIME = ktime_get_ns();
 	// Process normal values or future values according to iter in the command
 	start_time = ktime_get_ns();
 	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
@@ -173,6 +181,8 @@ void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 		if (kthread_should_stop())
 			return;
 	}
+EXEC_END_TIME = ktime_get_ns();
+edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	
 
 	id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 	if(task.is_fvc == 0)
@@ -294,6 +304,8 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				NVMEV_INFO("Hit/Total (Vertex buffer): %lld/%lld", nvmev_vdev->vertex_buf.hit_cnt, nvmev_vdev->vertex_buf.total_access_cnt);
 				NVMEV_INFO("Edge Processing time: %lld ms, Internal IO time: %lld ms, External IO time: %lld ms", nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio, 
 					nvmev_vdev->edge_buf.edge_internal_io_time / ms_ns_ratio, nvmev_vdev->edge_buf.edge_external_io_time / ms_ns_ratio);
+				NVMEV_INFO("Prefetch Hit/Total Pages (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.prefetch_hit_cnt, nvmev_vdev->edge_buf.total_prefetch_cnt);
+				NVMEV_INFO("Prefetch Hit/Total Edge blocks (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.prefetch_block_hit_cnt, nvmev_vdev->edge_buf.total_prefetch_block_cnt);
 
 				hmb_dev.buf2.virt_addr[csd_id] = 1.0f * nvmev_vdev->edge_buf.hit_cnt / nvmev_vdev->edge_buf.total_access_cnt;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds] = nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio;
