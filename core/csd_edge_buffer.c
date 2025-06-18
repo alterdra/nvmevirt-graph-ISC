@@ -64,7 +64,9 @@ long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, in
     unit->r = r;
     unit->c = c;
     unit->size = size > buf->capacity ? buf->capacity : size;
-    unit->is_prefetched_normal = is_prefetch;
+    // 0: not prefetched, 1: prefetching future, 2: prefetching normal, 3: prefetching next iter normal
+    // 0, 1 should be future
+    unit->is_prefetched_normal = (is_prefetch == 2 || is_prefetch == 3) ? is_prefetch - 1 : 0;
     
     curr_size = get_edge_block_size(buf, r, c);
     if(curr_size == -1)
@@ -85,6 +87,7 @@ long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, in
     // Partial (or full) edge block in cache, must be list head for FVC access pattern
     else{
         long long evicted_size = 0;
+        invalidate_edge_block(buf, r, c);
         if(partial_edge_eviction){
             unit->size -= curr_size;
             evicted_size = evict_edge_block(buf, aggregated, unit, is_prefetch);
@@ -97,7 +100,6 @@ long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, in
         else{
             unit->size = min(unit->size, curr_size + evicted_size);
         }
-        invalidate_edge_block(buf, r, c);
         buf->size += unit->size; 
         list_add_tail(&unit->list, &buf->head);
         // printk(KERN_INFO "Cache hit Processing edge-block-%u-%u, size: %lld", r, c, size);
@@ -110,7 +112,6 @@ long long evict_edge_block(struct edge_buffer *buf, bool* aggregated, struct edg
 {
     struct edge_buffer_unit *unit;
     long long size = inserted_unit->size;
-    long long evicted_size = 0;
     while(!list_empty(&buf->head) && buf->size + size > buf->capacity)
     {
 
@@ -145,7 +146,6 @@ long long evict_edge_block(struct edge_buffer *buf, bool* aggregated, struct edg
         if(partial_edge_eviction){
             if(buf->size - unit->size + size >= buf->capacity){
                 buf->size -= unit->size;
-                evicted_size += unit->size;
                 list_del(&unit->list);
                 kfree(unit);
             }
@@ -154,18 +154,16 @@ long long evict_edge_block(struct edge_buffer *buf, bool* aggregated, struct edg
                 long long diff = buf->size + size - buf->capacity;
                 unit->size -= diff;
                 buf->size -= diff;
-                evicted_size += diff;
                 break;
             }
         }
         else{
             buf->size -= unit->size;
-            evicted_size += unit->size;
             list_del(&unit->list);
             kfree(unit);
         }
     }
-    return evicted_size;
+    return buf->capacity - buf->size;
 }
 
 void invalidate_edge_block_fifo(struct edge_buffer *buf)
@@ -205,20 +203,26 @@ long long get_edge_block_size(struct edge_buffer *buf, int r, int c)
 }
 
 bool lower(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, bool* aggregated){
-    // For the same priority
-    // FIFO for future edges (since we process latest future that the row is ready)
-    // Todo: LIFO for prefetched normal (2 for next iteration, lowest priority)
+    // Check if unit < evict_unit, evict unit is earlier in the list
+
+    // 1. LIFO for prefetched normal (2 for next iteration, lowest priority)
+    if(unit->is_prefetched_normal == 2)
+        return true;
     if(evict_unit->is_prefetched_normal == 2)
         return false;
-    if(unit->is_prefetched_normal == 2)
-        return true;   
+
+    // 2. FIFO for unexecutable future edges (since we process latest future that the row is ready)
     if(evict_unit->is_prefetched_normal == 0 && !aggregated[evict_unit->r])
         return false;
-    if(evict_unit->is_prefetched_normal == 0 && !aggregated[unit->r])
+    if(unit->is_prefetched_normal == 0 && !aggregated[unit->r])
         return true; 
+    
+    // 3. LIFO for prefetched normal
+    if(unit->is_prefetched_normal == 1)
+        return true;
     if(evict_unit->is_prefetched_normal == 1)
         return false;
-    if(unit->is_prefetched_normal == 1)
-        return true;   
+
+    // 4. FIFO for executable future edges (since we process latest future that the row is ready)
     return false;   
 }

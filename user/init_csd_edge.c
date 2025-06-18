@@ -981,8 +981,8 @@ int main(int argc, char* argv[])
     // run_dq_composition(buffer, __num_iter, true);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
-    // run_dq_row_overlap(buffer, __num_iter);
-    run_all_composition(buffer, __num_iter);
+    run_dq_row_overlap(buffer, __num_iter);
+    // run_all_composition(buffer, __num_iter);
     cleanup(buffer);
     
     return 0;
