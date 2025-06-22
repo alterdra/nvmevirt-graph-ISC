@@ -119,18 +119,18 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	done[id] = 1;
 }
 
-void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_prefetch, long long* edge_proc_time, int is_prefetch)
+long long prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_prefetch, long long* edge_proc_time, int is_prefetch)
 {
 	long long size_in_cache, size_in_cache_new, size_in_cache_old;
 	long long edge_io_time;
 	double ratio;
 
 	if(task_prefetch.edge_block_len == 0 || *edge_proc_time <= 0)
-		return;
+		return 0;
 
 	size_in_cache = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
 	if(size_in_cache == task_prefetch.edge_block_len)
-		return;
+		return 0;
 	if(size_in_cache == -1)
 		size_in_cache = 0;
 	
@@ -143,7 +143,7 @@ void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_pre
 	*edge_proc_time -= (long long) (edge_io_time * (1.0 * (task_prefetch.edge_block_len - size_in_cache) / task_prefetch.edge_block_len));
 
 	size_in_cache_old = size_in_cache;
-	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), task_prefetch.edge_block_len);
+	size_in_cache = min(size_in_cache + (long long) (task_prefetch.edge_block_len * ratio), (long long)(task_prefetch.edge_block_len));
 	// NVMEV_INFO("After Prefetching edge block %d-%d, size_in_cache: %lld, edge_block_len: %lld, edge_proc_time: %lld, edge_io_time: %lld",
 	// 	task_prefetch.r, task_prefetch.c, size_in_cache, task_prefetch.edge_block_len, *edge_proc_time, edge_io_time);
 	access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task_prefetch.r, task_prefetch.c, size_in_cache, is_prefetch);
@@ -151,7 +151,8 @@ void prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_pre
 	size_in_cache_new = get_edge_block_size(edge_buf, task_prefetch.r, task_prefetch.c);
 	if(size_in_cache_new == -1)
 		size_in_cache_new = 0;
-	edge_buf->prefetched_size = (size_in_cache_new - size_in_cache_old) / PAGE_SIZE;
+	edge_buf->prefetched_size = max(0, (size_in_cache_new - size_in_cache_old)) / PAGE_SIZE;
+	return edge_buf->prefetched_size;
 }
 
 bool find_next_future_task(struct queue *future_task_queue, bool* aggregated, struct PROC_EDGE *task, bool is_dequeue)
@@ -376,16 +377,18 @@ void __do_perform_edge_proc(void)
 					edge_buf->prefetched_r = -1;
 					edge_buf->prefetched_c = -1;
 					edge_buf->prefetched_iter = -1;
+
 					if(tmp_edge_proc_time > 0){
 						struct PROC_EDGE next_task;
 						int found_cnt = 0;
 						if(get_queue_size(future_task_queue))
 						{	
+							// Executable future tasks
 							struct queue_node *node;
 							list_for_each_entry_reverse(node, &future_task_queue->head, list) {
 								if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
 									next_task = node->proc_edge_struct;
-									prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
+									edge_buf->prefetch_priority_cnt[2] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
 									if(found_cnt == 0){
 										edge_buf->prefetched_r = next_task.r;
 										edge_buf->prefetched_c = next_task.c;
@@ -399,25 +402,44 @@ void __do_perform_edge_proc(void)
 						}
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
+							// Normal tasks
 							get_queue_front(normal_task_queue, &next_task);
-							
-							// Find the first true normal task
-							// struct queue_node *node;
-							// list_for_each_entry(node, &normal_task_queue->head, list) {
-							// 	if(!node->proc_edge_struct.is_fvc){
-							// 		next_task = node->proc_edge_struct;
-							// 		break;
-							// 	}
-							// }
 
-							int is_prefetch = 2;
-							if(task.is_fvc && !next_task.is_fvc)
-								is_prefetch = 3;
-							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, is_prefetch);
+							if(!(task.is_fvc && !next_task.is_fvc)){
+								edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
+								if(found_cnt == 0){
+									edge_buf->prefetched_r = next_task.r;
+									edge_buf->prefetched_c = next_task.c;
+									edge_buf->prefetched_iter = next_task.iter;
+									found_cnt++;
+								}
+							}
+						}
+						if(tmp_edge_proc_time > 0 && get_queue_size(future_task_queue))
+						{
+							// Unexecutable future tasks
+							get_queue_front(future_task_queue, &next_task);
+							edge_buf->prefetch_priority_cnt[4] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
 							if(found_cnt == 0){
 								edge_buf->prefetched_r = next_task.r;
 								edge_buf->prefetched_c = next_task.c;
 								edge_buf->prefetched_iter = next_task.iter;
+								found_cnt++;
+							}
+						}
+						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
+						{
+							// Next iteration Normal tasks
+							get_queue_front(normal_task_queue, &next_task);
+
+							if(task.is_fvc && !next_task.is_fvc){
+								edge_buf->prefetch_priority_cnt[5] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 3);
+								if(found_cnt == 0){
+									edge_buf->prefetched_r = next_task.r;
+									edge_buf->prefetched_c = next_task.c;
+									edge_buf->prefetched_iter = next_task.iter;
+									found_cnt++;
+								}
 							}
 						}
 					}
@@ -480,7 +502,7 @@ void __do_perform_edge_proc(void)
 			// Edge read I/O
 			size_not_in_cache = access_edge_block(edge_buf, hmb_dev.done_partition.virt_addr, task.r, task.c, task.edge_block_len, false);
 			if(invalidation_at_future_value){
-        		if(task.iter == 0 && task.r > task.c || task.is_fvc)	// lower triangle
+        		if((task.iter == 0 && task.r > task.c) || task.is_fvc)	// lower triangle
         			invalidate_edge_block(edge_buf, task.r, task.c);
 			}
 			if(task.edge_block_len == 0)
@@ -521,11 +543,12 @@ void __do_perform_edge_proc(void)
 						int found_cnt = 0;
 						if(get_queue_size(future_task_queue))
 						{	
+							// Executable future tasks
 							struct queue_node *node;
 							list_for_each_entry_reverse(node, &future_task_queue->head, list) {
 								if (hmb_dev.done_partition.virt_addr[node->proc_edge_struct.r]) {
 									next_task = node->proc_edge_struct;
-									prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
+									edge_buf->prefetch_priority_cnt[2] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
 									if(found_cnt == 0){
 										edge_buf->prefetched_r = next_task.r;
 										edge_buf->prefetched_c = next_task.c;
@@ -539,15 +562,44 @@ void __do_perform_edge_proc(void)
 						}
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
+							// Normal tasks
 							get_queue_front(normal_task_queue, &next_task);
-							int is_prefetch = 2;
-							if(task.is_fvc && !next_task.is_fvc)
-								is_prefetch = 3;
-							prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, is_prefetch);
+
+							if(!(task.is_fvc && !next_task.is_fvc)){
+								edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
+								if(found_cnt == 0){
+									edge_buf->prefetched_r = next_task.r;
+									edge_buf->prefetched_c = next_task.c;
+									edge_buf->prefetched_iter = next_task.iter;
+									found_cnt++;
+								}
+							}
+						}
+						if(tmp_edge_proc_time > 0 && get_queue_size(future_task_queue))
+						{
+							// Unexecutable future tasks
+							get_queue_front(future_task_queue, &next_task);
+							edge_buf->prefetch_priority_cnt[4] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 1);
 							if(found_cnt == 0){
 								edge_buf->prefetched_r = next_task.r;
 								edge_buf->prefetched_c = next_task.c;
 								edge_buf->prefetched_iter = next_task.iter;
+								found_cnt++;
+							}
+						}
+						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
+						{
+							// Next iteration Normal tasks
+							get_queue_front(normal_task_queue, &next_task);
+
+							if(task.is_fvc && !next_task.is_fvc){
+								edge_buf->prefetch_priority_cnt[5] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 3);
+								if(found_cnt == 0){
+									edge_buf->prefetched_r = next_task.r;
+									edge_buf->prefetched_c = next_task.c;
+									edge_buf->prefetched_iter = next_task.iter;
+									found_cnt++;
+								}
 							}
 						}
 					}
@@ -586,6 +638,7 @@ void __do_perform_edge_proc(void)
 			if(task.iter != task.num_iters - 1 &&
 			((task.iter % 2 == 0 && task.r <= task.c) || (task.iter % 2 == 1 && task.r > task.c))){
 				task.iter++;
+				task.is_fvc = true;
 				queue_enqueue(future_task_queue, task);
 			}
 

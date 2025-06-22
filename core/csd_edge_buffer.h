@@ -28,6 +28,8 @@ struct edge_buffer {
     long long total_prefetch_cnt, prefetch_hit_cnt;
     long long total_prefetch_block_cnt, prefetch_block_hit_cnt;
 
+    long long prefetch_priority_cnt[7];
+
     // Todo: execution time composition to a new header file
     long long edge_proc_time, edge_internal_io_time, edge_external_io_time;
 };

@@ -2,6 +2,7 @@
 
 void edge_buffer_init(struct edge_buffer *buf)
 {
+    int i;
     INIT_LIST_HEAD(&buf->head);
     mutex_init(&buf->lock);
     buf->size = 0;
@@ -14,6 +15,8 @@ void edge_buffer_init(struct edge_buffer *buf)
     buf->prefetched_size = 0;
     buf->total_prefetch_cnt = buf->prefetch_hit_cnt = 0;
     buf->total_prefetch_block_cnt = buf->prefetch_block_hit_cnt = 0;
+    for(i = 0; i < 7; i++)
+        buf->prefetch_priority_cnt[i] = 0;
 
     printk(KERN_INFO "Edge buffer size: %lld", buf->capacity);
     printk(KERN_INFO "Cache eviction policy: %s", cache_eviction_policy);
@@ -26,6 +29,7 @@ void edge_buffer_init(struct edge_buffer *buf)
 
 void edge_buffer_destroy(struct edge_buffer *buf)
 {
+    int i;
     struct edge_buffer_unit *unit, *tmp;
 
     list_for_each_entry_safe(unit, tmp, &buf->head, list) {
@@ -41,6 +45,8 @@ void edge_buffer_destroy(struct edge_buffer *buf)
     buf->prefetched_size = 0;
     buf->total_prefetch_cnt = buf->prefetch_hit_cnt = 0;
     buf->total_prefetch_block_cnt = buf->prefetch_block_hit_cnt = 0;
+    for(i = 0; i < 7; i++)
+        buf->prefetch_priority_cnt[i] = 0;
 
     // Todo: execution time composition to a new header file
     buf->edge_proc_time = buf->edge_internal_io_time = buf->edge_external_io_time = 0;
@@ -64,6 +70,7 @@ long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, in
     unit->r = r;
     unit->c = c;
     unit->size = size > buf->capacity ? buf->capacity : size;
+    if(is_prefetch) size = size > buf->capacity ? buf->capacity : size;
     // 0: not prefetched, 1: prefetching future, 2: prefetching normal, 3: prefetching next iter normal
     // 0, 1 should be future
     unit->is_prefetched_normal = (is_prefetch == 2 || is_prefetch == 3) ? is_prefetch - 1 : 0;
@@ -89,16 +96,14 @@ long long access_edge_block(struct edge_buffer *buf, bool* aggregated, int r, in
         long long evicted_size = 0;
         invalidate_edge_block(buf, r, c);
         if(partial_edge_eviction){
-            unit->size -= curr_size;
             evicted_size = evict_edge_block(buf, aggregated, unit, is_prefetch);
-            unit->size += curr_size;
         }
         if(!is_prefetch){
             buf->hit_cnt += curr_size / PAGE_SIZE;
             buf->total_access_cnt += size / PAGE_SIZE;
         }
         else{
-            unit->size = min(unit->size, curr_size + evicted_size);
+            unit->size = min(unit->size, evicted_size);
         }
         buf->size += unit->size; 
         list_add_tail(&unit->list, &buf->head);
