@@ -734,6 +734,33 @@ void run_dq_prefetch(void* buffer, int __num_iter)
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
 }
 
+void run_dq_prefetch_priorities(void* buffer, int __num_iter)
+{
+    float cache_hit_rate;
+    long long s, e;
+    int ms_ns_ratio = 1000000;
+
+    printf("DQ_PF-----------");
+    init_csds_data(fd, buffer);
+    s = get_time_ns();
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, 2, 2);
+    e = get_time_ns();
+    cache_hit_rate = 0.0;
+    for(int csd_id = 0; csd_id < num_csds; csd_id++){
+        cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+    }
+    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+    printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
+
+    for(int i = 4; i <= 7; i++){
+        float cnt = 0.0;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            cnt += hmb_dev.buf2.virt_addr[csd_id + num_csds * i];
+        }
+        printf("Priority %d: %lld\n", i - 2, (long long)cnt / num_csds);
+    }
+}
+
 void run_dq_row_overlap(void* buffer, int __num_iter)
 {
     float cache_hit_rate;
@@ -742,9 +769,9 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     char prefetching_str[4][40] = {"No Prefetch", "Prefetch Current Edge", "Prefetch All"};
     char row_overlap_str[3][40] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
 
-    for(int prefetching = 0; prefetching <= 2; prefetching++)
+    for(int prefetching = 0; prefetching <= 0; prefetching++)
     {
-        for(int row_overlap = 2; row_overlap <= 2; row_overlap++)
+        for(int row_overlap = 0; row_overlap <= 2; row_overlap++)
         {
             printf("DQ, %s, %s------", prefetching_str[prefetching], row_overlap_str[row_overlap]);
             init_csds_data(fd, buffer);
@@ -982,7 +1009,9 @@ int main(int argc, char* argv[])
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
     run_dq_row_overlap(buffer, __num_iter);
+    // run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
+    
     cleanup(buffer);
     
     return 0;

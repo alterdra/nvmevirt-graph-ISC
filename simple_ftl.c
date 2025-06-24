@@ -299,6 +299,7 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				int csd_id = proc_edge_struct.csd_id;
 				int num_csds = proc_edge_struct.num_csds;
 				int ms_ns_ratio = 1000000;
+				int i;
 
 				NVMEV_INFO("Hit/Total (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.hit_cnt, nvmev_vdev->edge_buf.total_access_cnt);
 				NVMEV_INFO("Hit/Total (Vertex buffer): %lld/%lld", nvmev_vdev->vertex_buf.hit_cnt, nvmev_vdev->vertex_buf.total_access_cnt);
@@ -312,6 +313,9 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				hmb_dev.buf2.virt_addr[csd_id + num_csds] = nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds * 2] = nvmev_vdev->edge_buf.edge_internal_io_time / ms_ns_ratio;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds * 3] = nvmev_vdev->edge_buf.edge_external_io_time / ms_ns_ratio;
+				for(i = 4; i <= 7; i++){
+					hmb_dev.buf2.virt_addr[csd_id + num_csds * i] = 1.0 * nvmev_vdev->edge_buf.prefetch_priority_cnt[i - 2];
+				}
 
 				edge_buffer_destroy(&(nvmev_vdev->edge_buf));
 				vertex_buffer_destroy(&(nvmev_vdev->vertex_buf));

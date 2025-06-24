@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Ex: bash test_row_overlap.sh LiveJournal.pl 5 526M 18M
-# Ex: bash test_row_overlap.sh Twitter-2010.pl 5 11G 160M
-# Ex: bash test_row_overlap.sh Friendster.pl 5 14G 250M
-# Ex: bash test_row_overlap.sh ./storage_sdf/lumos/Uk-2007.pl 5 30G 414M
-# Ex: bash test_row_overlap.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# Ex: bash test_row_overlap.sh LiveJournal.pl 526M 18M
+# Ex: bash test_row_overlap.sh Twitter-2010.pl 11G 160M
+# Ex: bash test_row_overlap.sh Friendster.pl 14G 250M
+# Ex: bash test_row_overlap.sh ./storage_sdf/lumos/Uk-2007.pl 30G 414M
+# Ex: bash test_row_overlap.sh ./storage_sdf/lumos/RMAT29.pl 66G 537M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -33,17 +33,17 @@ convert_to_human() {
 
 # Read input arguments
 dataset_path=$1
-x_percentage=$2
-edge_size_human=$3
-vertex_size_human=$4
+edge_size_human=$2
+vertex_size_human=$3
 
 edge_size=$(convert_to_bytes $edge_size_human)
 vertex_size=$(convert_to_bytes $vertex_size_human)
-x_decimal=$(echo "scale=4; $x_percentage / 100" | bc | sed 's/^\./0./')
+x_decimal=0.05
 
 edge_alloc=$(echo "scale=4; $edge_size * $x_decimal" | bc)
 edge_alloc=$(echo "$edge_alloc" | awk '{print int($1)}')
-edge_alloc_human=$(convert_to_human $edge_alloc)
+# edge_alloc_human=$(convert_to_human $edge_alloc)
+edge_alloc_human="100M"
 
 vertex_alloc=$(echo "scale=4; $vertex_size * 2 * $x_decimal" | bc)
 vertex_alloc=$(echo "$vertex_alloc" | awk '{print int($1)}')
@@ -56,7 +56,7 @@ echo "Output path: $dataset_path"
 cleaned_path="${dataset_path##*/}"
 echo "Cleaned path: $cleaned_path"
 
-output_path="experiments/row_overlap_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
+output_path="experiments/row_overlap/row_overlap_${cleaned_path}_p${num_partition}_${edge_alloc_human}.txt"
 
 cd user
 make
