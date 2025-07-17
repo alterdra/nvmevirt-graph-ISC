@@ -3,8 +3,9 @@
 # Ex: bash test_composition.sh LiveJournal.pl 5 526M 18M
 # Ex: bash test_composition.sh Twitter-2010.pl 5 11G 160M
 # Ex: bash test_composition.sh Friendster.pl  5 14G 250M
-# Ex: bash test_composition.sh Uk-2007.pl 5 30G 414M
+# Ex: bash test_composition.sh ./storage_sdf/lumos/Uk-2007.pl 5 30G 414M
 # Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT30.pl 5 66G 1.1B
 # sudo mount /dev/sdf1 storage_sdf
 # 203ec6ab-4d40-4794-bfc8-e6807b5bbb61
 
@@ -45,7 +46,8 @@ x_decimal=$(echo "scale=4; $x_percentage / 100" | bc | sed 's/^\./0./')
 
 edge_alloc=$(echo "scale=4; $edge_size * $x_decimal" | bc)
 edge_alloc=$(echo "$edge_alloc" | awk '{print int($1)}')
-edge_alloc_human=$(convert_to_human $edge_alloc)
+# edge_alloc_human=$(convert_to_human $edge_alloc)
+edge_alloc_human="1G"
 
 vertex_alloc=$(echo "scale=4; $vertex_size * 2 * $x_decimal" | bc)
 vertex_alloc=$(echo "$vertex_alloc" | awk '{print int($1)}')
@@ -65,7 +67,8 @@ make
 cd ..
 
 # Loop through the number of CSDs
-for num_csd in 8 16; do
+# 1 2 4 8 16
+for num_csd in 16; do
     echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
     bash init_csds.sh -n $num_csd -c PRIORITY -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
     sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path

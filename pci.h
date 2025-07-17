@@ -574,8 +574,24 @@ struct nvme_ctrl_regs {
 #define NVMEV_PCI_BUS_NUM 0x15
 #elif (VIRT_ID == 15)
 #define NVMEV_PCI_BUS_NUM 0x16
-#else
+#elif (VIRT_ID == 16)
 #define NVMEV_PCI_BUS_NUM 0x17
+#elif (VIRT_ID == 17)
+#define NVMEV_PCI_BUS_NUM 0x18
+#elif (VIRT_ID == 18)
+#define NVMEV_PCI_BUS_NUM 0x19
+#elif (VIRT_ID == 19)
+#define NVMEV_PCI_BUS_NUM 0x20
+#elif (VIRT_ID == 20)
+#define NVMEV_PCI_BUS_NUM 0x21
+#elif (VIRT_ID == 21)
+#define NVMEV_PCI_BUS_NUM 0x22
+#elif (VIRT_ID == 22)
+#define NVMEV_PCI_BUS_NUM 0x23
+#elif (VIRT_ID == 23)
+#define NVMEV_PCI_BUS_NUM 0x24
+#else
+#define NVMEV_PCI_BUS_NUM 0x25
 #endif
 
 //[PCI_HEADER][PM_CAP][MSIX_CAP][PCIE_CAP] | [AER_CAP][EXT_CAP]

@@ -16,25 +16,13 @@ int hmb_init(struct hmb_device *dev)
         return -1;
     }
 
-    /* Map v_t between host and csds*/
-    dev->buf0.size = HMB_SIZE;
-    dev->buf0.virt_addr = mmap(NULL, HMB_SIZE, 
-                              PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, 0);
-    if (dev->buf0.virt_addr == MAP_FAILED) {
-        perror("mmap buffer 0 (v_t) failed");
-        close(dev->fd);
-        return -1;
-    }
-
     /* Map v_t+1 */
     dev->buf1.size = HMB_SIZE;
     dev->buf1.virt_addr = mmap(NULL, HMB_SIZE, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE);
+                              MAP_SHARED, dev->fd, 0);
     if (dev->buf1.virt_addr == MAP_FAILED) {
         perror("mmap buffer 1 (v_t+1)failed");
-        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
         close(dev->fd);
         return -1;
     }
@@ -43,11 +31,23 @@ int hmb_init(struct hmb_device *dev)
     dev->buf2.size = HMB_SIZE;
     dev->buf2.virt_addr = mmap(NULL, HMB_SIZE, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE * 2);
+                              MAP_SHARED, dev->fd, HMB_SIZE);
     if (dev->buf2.virt_addr == MAP_FAILED) {
         perror("mmap buffer 2 (v_t+2) failed");
-        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
+        close(dev->fd);
+        return -1;
+    }
+
+    /* Map v_t between host and csds*/
+    dev->buf0.size = HMB_SIZE / 4;
+    dev->buf0.virt_addr = mmap(NULL, HMB_SIZE / 4, 
+                              PROT_READ | PROT_WRITE,
+                              MAP_SHARED, dev->fd, HMB_SIZE * 2);
+    if (dev->buf0.virt_addr == MAP_FAILED) {
+        perror("mmap buffer 0 (v_t) failed");
+        munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
         close(dev->fd);
         return -1;
     }
@@ -56,10 +56,10 @@ int hmb_init(struct hmb_device *dev)
     dev->done1.size = HMB_SIZE / 4;
     dev->done1.virt_addr = mmap(NULL, HMB_SIZE / 4, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE * 3);
+                              MAP_SHARED, dev->fd, HMB_SIZE * 2 + HMB_SIZE / 4);
     if (dev->done1.virt_addr == MAP_FAILED) {
         perror("mmap buffer done failed");
-        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE / 4);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
         close(dev->fd);
@@ -70,10 +70,10 @@ int hmb_init(struct hmb_device *dev)
     dev->done2.size = HMB_SIZE / 4;
     dev->done2.virt_addr = mmap(NULL, HMB_SIZE / 4, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE * 3 + HMB_SIZE / 4);
+                              MAP_SHARED, dev->fd, HMB_SIZE * 2 + HMB_SIZE * 2 / 4);
     if (dev->done2.virt_addr == MAP_FAILED) {
         perror("mmap buffer done failed");
-        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE / 4);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
         munmap((void*)dev->done1.virt_addr, HMB_SIZE / 4);
@@ -85,10 +85,10 @@ int hmb_init(struct hmb_device *dev)
     dev->done_partition.size = HMB_SIZE / 4;
     dev->done_partition.virt_addr = mmap(NULL, HMB_SIZE / 4, 
                               PROT_READ | PROT_WRITE,
-                              MAP_SHARED, dev->fd, HMB_SIZE * 3 + HMB_SIZE * 2 / 4);
+                              MAP_SHARED, dev->fd, HMB_SIZE * 2 + HMB_SIZE * 3 / 4);
     if (dev->done_partition.virt_addr == MAP_FAILED) {
         perror("mmap buffer done failed");
-        munmap((void*)dev->buf0.virt_addr, HMB_SIZE);
+        munmap((void*)dev->buf0.virt_addr, HMB_SIZE / 4);
         munmap((void*)dev->buf1.virt_addr, HMB_SIZE);
         munmap((void*)dev->buf2.virt_addr, HMB_SIZE);
         munmap((void*)dev->done1.virt_addr, HMB_SIZE / 4);

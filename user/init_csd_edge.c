@@ -29,13 +29,15 @@ const char device[MAX_NUM_CSDS][20] = {
     "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1", "/dev/nvme8n1",
     "/dev/nvme9n1", "/dev/nvme10n1", "/dev/nvme11n1", "/dev/nvme12n1",
     "/dev/nvme13n1", "/dev/nvme14n1", "/dev/nvme15n1", "/dev/nvme16n1",
+    "/dev/nvme17n1", "/dev/nvme18n1", "/dev/nvme19n1", "/dev/nvme20n1",
+    "/dev/nvme21n1", "/dev/nvme22n1", "/dev/nvme23n1", "/dev/nvme24n1"
 };
 int fd[MAX_NUM_CSDS] = {0};
 
 // Graph Dataset: Ex, LiveJournal
 char dataset_path[30];
 int num_partitions;
-int num_vertices;
+long long num_vertices;
 const size_t buffer_size = SECTOR_SIZE * NUM_SECTORS;
 
 // Vertex data and aggregation info
@@ -188,12 +190,12 @@ int init_csds_data(int* fd, void *buffer)
     struct nvme_user_io io;
 
     // Initialize all v_t values
-    for(int i = 0; i < num_vertices * (num_csds + 1); i++){
+    for(long long i = 0; i < num_vertices * (num_csds + 1); i++){
         hmb_dev.buf0.virt_addr[i] = 0.0f;
         hmb_dev.buf1.virt_addr[i] = 0.0f;
         hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
-    for(int i = 0; i < num_vertices; i++){
+    for(long long i = 0; i < num_vertices; i++){
         hmb_dev.buf0.virt_addr[i] = 1.0;
     }
     for(int c = 0; c < num_partitions; c++){
@@ -207,6 +209,9 @@ int init_csds_data(int* fd, void *buffer)
     }
     for(int c = 0; c < num_partitions; c++)
         hmb_dev.done_partition.virt_addr[c] = false;
+    
+    // printf("HMB Reset done");
+    // fflush(stdout);
 
     // Read outdegree and write 4KB buffers into nvme virtual devices (csd_id)
     outdegree_slba = 0;
@@ -691,14 +696,14 @@ void run_normal_grafu_dq(void* buffer, int __num_iter){
     printf("DQ--------------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, false, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, 0, 0);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 
     printf("DQ_PF-----------");
     init_csds_data(fd, buffer);
     s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, true, false);
+    csd_proc_edge_loop_dual_queue(buffer, __num_iter, 2, 2);
     e = get_time_ns();
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
 }
@@ -821,7 +826,7 @@ void run_dq_cache_hitrate(void* buffer, int __num_iter)
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds / experiment_num);
 }
 
-void run_dq_composition(void* buffer, int __num_iter, bool prefetching)
+void run_dq_composition(void* buffer, int __num_iter, int prefetching)
 {
     int experiment_num = 1;
     long long total_time = 0;
@@ -975,7 +980,7 @@ int main(int argc, char* argv[])
     // Initialize graph dataset metadata
     FILE * fin_meta = fopen(meta_path, "r");
     long tmp[3];
-    fscanf(fin_meta, "%ld %d %ld %d %ld", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
+    fscanf(fin_meta, "%ld %lld %ld %d %ld", &tmp[0], &num_vertices, &tmp[1], &num_partitions, &tmp[2]);
     fclose(fin_meta);
     
     // Allocate buffer
@@ -1000,15 +1005,15 @@ int main(int argc, char* argv[])
     }
     printf("HMB initialized successfully\n");
 
-    printf("num iter: %d, num csds: %d\n", __num_iter, num_csds);
+    printf("num iter: %d, num csds: %d, num vertices: %lld\n", __num_iter, num_csds, num_vertices);
 
     total_aggr_time = 0;
     // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
-    // run_dq_composition(buffer, __num_iter, true);
+    run_dq_composition(buffer, __num_iter, 2);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
-    run_dq_row_overlap(buffer, __num_iter);
+    // run_dq_row_overlap(buffer, __num_iter);
     // run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
     

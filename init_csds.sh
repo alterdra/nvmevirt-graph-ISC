@@ -2,7 +2,7 @@
 
 # Unload existing kernel modules dynamically
 modules=()
-for i in {0..15}; do
+for i in {0..23}; do
     modules+=("nvmev$i")
 done
 modules+=("hmb")
@@ -35,7 +35,7 @@ num_csds=${num_csds:-4}
 
 echo "Number of CSDs: ${num_csds}"
 
-total_mem_gb=160
+total_mem_gb=400
 memmap_size_gb=$((total_mem_gb / num_csds))  # 15G per entry
 
 # Initialize arrays

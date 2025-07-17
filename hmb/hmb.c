@@ -4,36 +4,36 @@
 #include <linux/io.h>
 #include "hmb.h"
 
-#define MEM_START 288 * 1024 * 1024 * 1024UL
+#define MEM_START 528 * 1024 * 1024 * 1024UL
 struct hmb_device hmb_dev = {
     .buf0 = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START,  /* MEM_START = 7GB, Size = 256MB */
-        .size = HMB_SIZE
+        .phys_addr = MEM_START + HMB_SIZE * 2,  /* MEM_START = 7GB, Size = 256MB */
+        .size = HMB_SIZE / 4
     },
     .buf1 = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE,  /* MEM_START = 7GB + 256MB, Size = 256MB */
+        .phys_addr = MEM_START,  /* MEM_START = 7GB + 256MB, Size = 256MB */
         .size = HMB_SIZE
     },
     .buf2 = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE * 2,  /* MEM_START = 7GB + 512MB, Size = 256MB */
+        .phys_addr = MEM_START + HMB_SIZE,  /* MEM_START = 7GB + 512MB, Size = 256MB */
         .size = HMB_SIZE
     },
     .done1 = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE * 3,  
+        .phys_addr = MEM_START + HMB_SIZE * 2 + HMB_SIZE / 4,  
         .size = HMB_SIZE / 4    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
     },
     .done2 = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE * 3 + HMB_SIZE / 4,  
+        .phys_addr = MEM_START + HMB_SIZE * 2 + HMB_SIZE * 2 / 4,  
         .size = HMB_SIZE / 4    /* num_csd * num_partition ^ 2 * 2 (Normal, future) */ 
     },
     .done_partition = {
         .virt_addr = NULL,
-        .phys_addr = MEM_START + HMB_SIZE * 3 + HMB_SIZE * 2 / 4,  
+        .phys_addr = MEM_START + HMB_SIZE * 2 + HMB_SIZE * 3 / 4,  
         .size = HMB_SIZE / 4
     }
 };
@@ -57,16 +57,16 @@ int hmb_mmap(struct file *file, struct vm_area_struct *vma)
 
     /* Select which buffer based on offset */
     if (offset == 0) {
-        buf = &hmb_dev.buf0;
-    } else if (offset == HMB_SIZE) {
         buf = &hmb_dev.buf1;
-    } else if (offset == HMB_SIZE * 2) {
+    } else if (offset == HMB_SIZE) {
         buf = &hmb_dev.buf2;
-    } else if (offset == HMB_SIZE * 3){
+    } else if (offset == HMB_SIZE * 2) {
+        buf = &hmb_dev.buf0;
+    } else if (offset == HMB_SIZE * 2 + HMB_SIZE / 4){
         done = &hmb_dev.done1;
-    } else if (offset == HMB_SIZE * 3 + HMB_SIZE / 4){
+    } else if (offset == HMB_SIZE * 2 + HMB_SIZE * 2 / 4){
         done = &hmb_dev.done2;
-    } else if (offset == HMB_SIZE * 3 + HMB_SIZE * 2 / 4){
+    } else if (offset == HMB_SIZE * 2 + HMB_SIZE * 3 / 4){
         done = &hmb_dev.done_partition;
     } 
     else {

@@ -81,7 +81,7 @@ void print_vertex_info(int csd_id, int* outdegree, int u, int v)
 void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 {
 	int csd_id = task.csd_id;
-	int num_vertices = task.num_vertices;
+	long long num_vertices = task.num_vertices;
 
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
 	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
@@ -239,12 +239,13 @@ void __do_perform_edge_proc(void)
 			|| ((task.iter - 1) % 2 == 0 && task.r == task.num_partitions - 1)
 			|| ((task.iter - 1) % 2 == 1 && task.r == 0))
 			{
-				int csd_id, num_vertices;
+				int csd_id;
+				long long num_vertices;
 				long long offset, v;
 				unsigned long timeout;
 
 				// Waiting for last column aggregation end
-				timeout = jiffies + msecs_to_jiffies(10000); // 10 second timeout
+				timeout = jiffies + msecs_to_jiffies(60000); // 60 second timeout
 				while(!hmb_dev.done_partition.virt_addr[task.r]){
 					if (kthread_should_stop())
 						return;
@@ -254,6 +255,7 @@ void __do_perform_edge_proc(void)
 						break;
 					}
 					cpu_relax();
+					cond_resched();
 				}
 				
 				queue_dequeue(future_task_queue, &task);
@@ -265,7 +267,7 @@ void __do_perform_edge_proc(void)
 				// Ensuring all CSDs are ready for end-of-iter update to avoid race condition
 				hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1] = true;
 				
-				timeout = jiffies + msecs_to_jiffies(10000); // 10 second timeout
+				timeout = jiffies + msecs_to_jiffies(60000); // 60 second timeout
 				while(hmb_dev.done_partition.virt_addr[task.num_partitions + task.csd_id + 1]) {
 					if (kthread_should_stop())
 						return;
@@ -275,12 +277,13 @@ void __do_perform_edge_proc(void)
 						break;
 					}
 					cpu_relax();
+					cond_resched();
 				}
 
 				// End of iter vertices value update
 				csd_id = task.csd_id;
 				num_vertices = task.num_vertices;
-				offset = (task.csd_id + 1) * task.num_vertices;
+				offset = (task.csd_id + 1) * num_vertices;
 				for(v = 0; v < num_vertices; v++){
 				    hmb_dev.buf1.virt_addr[v + offset] = hmb_dev.buf2.virt_addr[v + offset];
 				    hmb_dev.buf2.virt_addr[v + offset] = 0.0;
@@ -314,7 +317,7 @@ void __do_perform_edge_proc(void)
 			unsigned long long size_in_cache;
 			double ratio;
 			long long partition_size;
-			int num_vertices;
+			long long num_vertices;
 
 			// We must find the next future task, because future_aggr_ready
 			find_next_future_task(future_task_queue, hmb_dev.done_partition.virt_addr, &task, true);
@@ -447,7 +450,7 @@ void __do_perform_edge_proc(void)
 			}
 			
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())
 					return;
@@ -478,7 +481,7 @@ void __do_perform_edge_proc(void)
 			long long end_time, size_not_in_cache;
 			double ratio;
 			long long partition_size;
-			int num_vertices;
+			long long num_vertices;
 
 			queue_dequeue(normal_task_queue, &task);
 			// NVMEV_INFO("(CSD %d Normal Queue) Prefetched-%d-%d-iter-%d, Processing-%d-%d-iter-%d",
@@ -608,7 +611,7 @@ void __do_perform_edge_proc(void)
 		
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 
-			// NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, size: %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())
 					return;
