@@ -152,6 +152,8 @@ EXEC_START_TIME = ktime_get_ns();
 	while(ktime_get_ns() < end_time){
 		if (kthread_should_stop())
 			return;
+		cpu_relax();
+		cond_resched();
 	}
 EXEC_END_TIME = ktime_get_ns();
 edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
@@ -180,6 +182,8 @@ EXEC_START_TIME = ktime_get_ns();
 	while(ktime_get_ns() < end_time){
 		if (kthread_should_stop())
 			return;
+		cpu_relax();
+		cond_resched();
 	}
 EXEC_END_TIME = ktime_get_ns();
 edge_buf->edge_proc_time += (EXEC_END_TIME - EXEC_START_TIME);	

@@ -411,7 +411,7 @@ void end_of_iter_waiting(){
 void end_of_iter_replacing()
 {
     // Vertices update in Host DRAM (Mapped with CSD)
-    for(int v = 0; v < num_vertices; v++){
+    for(long long v = 0; v < num_vertices; v++){
         hmb_dev.buf0.virt_addr[v] = hmb_dev.buf1.virt_addr[v];
         hmb_dev.buf1.virt_addr[v] = hmb_dev.buf2.virt_addr[v];
         hmb_dev.buf2.virt_addr[v] = 0.0;
@@ -1010,8 +1010,8 @@ int main(int argc, char* argv[])
     total_aggr_time = 0;
     // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
-    run_dq_composition(buffer, __num_iter, 2);
-    // run_dq_hmb_size(buffer, __num_iter);
+    // run_dq_composition(buffer, __num_iter, 2);
+    run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
     // run_dq_row_overlap(buffer, __num_iter);
     // run_dq_prefetch_priorities(buffer, __num_iter);
