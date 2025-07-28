@@ -312,13 +312,24 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 				NVMEV_INFO("Prefetch Hit/Total Pages (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.prefetch_hit_cnt, nvmev_vdev->edge_buf.total_prefetch_cnt);
 				NVMEV_INFO("Prefetch Hit/Total Edge blocks (Edge buffer): %lld/%lld", nvmev_vdev->edge_buf.prefetch_block_hit_cnt, nvmev_vdev->edge_buf.total_prefetch_block_cnt);
 				NVMEV_INFO("Prefetch Priority: 2: %lld, 3: %lld, 4: %lld, 5: %lld", nvmev_vdev->edge_buf.prefetch_priority_cnt[2], nvmev_vdev->edge_buf.prefetch_priority_cnt[3], nvmev_vdev->edge_buf.prefetch_priority_cnt[4], nvmev_vdev->edge_buf.prefetch_priority_cnt[5]);
-
+				NVMEV_INFO("Prefetch Priority Accuracy: 2: %lld/%lld, 3: %lld/%lld, 4: %lld/%lld, 5: %lld/%lld",
+					nvmev_vdev->edge_buf.prefetch_block_hit_cnt_arr[2], nvmev_vdev->edge_buf.prefetch_block_cnt_arr[2],
+					nvmev_vdev->edge_buf.prefetch_block_hit_cnt_arr[3], nvmev_vdev->edge_buf.prefetch_block_cnt_arr[3],
+					nvmev_vdev->edge_buf.prefetch_block_hit_cnt_arr[4], nvmev_vdev->edge_buf.prefetch_block_cnt_arr[4],
+					nvmev_vdev->edge_buf.prefetch_block_hit_cnt_arr[5], nvmev_vdev->edge_buf.prefetch_block_cnt_arr[5]);
+				
 				hmb_dev.buf2.virt_addr[csd_id] = 1.0f * nvmev_vdev->edge_buf.hit_cnt / nvmev_vdev->edge_buf.total_access_cnt;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds] = nvmev_vdev->edge_buf.edge_proc_time / ms_ns_ratio;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds * 2] = nvmev_vdev->edge_buf.edge_internal_io_time / ms_ns_ratio;
 				hmb_dev.buf2.virt_addr[csd_id + num_csds * 3] = nvmev_vdev->edge_buf.edge_external_io_time / ms_ns_ratio;
 				for(i = 4; i <= 7; i++){
 					hmb_dev.buf2.virt_addr[csd_id + num_csds * i] = 1.0 * nvmev_vdev->edge_buf.prefetch_priority_cnt[i - 2];
+				}
+				for(i = 8; i <= 11; i++){
+					hmb_dev.buf2.virt_addr[csd_id + num_csds * i] = 1.0 * nvmev_vdev->edge_buf.prefetch_block_hit_cnt_arr[i - 6];
+				}
+				for(i = 12; i <= 15; i++){
+					hmb_dev.buf2.virt_addr[csd_id + num_csds * i] = 1.0 * nvmev_vdev->edge_buf.prefetch_block_cnt_arr[i - 10];
 				}
 
 				edge_buffer_destroy(&(nvmev_vdev->edge_buf));

@@ -600,18 +600,39 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
         curr_iter = iter;
         if(iter % 2 == 0){
             // 1. Iter: Sending ioctl command for all edge blocks
-            for(int c = 0; c < num_partitions; c++){
+            if(row_overlap == 3 && iter > 0){
+                // Send row of normal tasks instead of column of normal tasks (Row execution)
                 for(int r = 0; r < num_partitions; r++){
-                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                        if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == num_partitions - 1))
-                            hmb_dev.done1.virt_addr[id] = true; // size = 0 && not the last task, mark as done
-                        if(hmb_dev.done1.virt_addr[id])
-                            continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
-                        if(ret < 0){
-                            cleanup(buffer);
-                            return -1;
+                    for(int c = 0; c < num_partitions; c++){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                            if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == num_partitions - 1))
+                                hmb_dev.done1.virt_addr[id] = true; // size = 0 && not the last task, mark as done
+                            if(hmb_dev.done1.virt_addr[id])
+                                continue;
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
+                            if(ret < 0){
+                                cleanup(buffer);
+                                return -1;
+                            }
+                        }
+                    }
+                }
+            }
+            else{
+                for(int c = 0; c < num_partitions; c++){
+                    for(int r = 0; r < num_partitions; r++){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                            if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == num_partitions - 1))
+                                hmb_dev.done1.virt_addr[id] = true; // size = 0 && not the last task, mark as done
+                            if(hmb_dev.done1.virt_addr[id])
+                                continue;
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
+                            if(ret < 0){
+                                cleanup(buffer);
+                                return -1;
+                            }
                         }
                     }
                 }
@@ -630,18 +651,39 @@ int csd_proc_edge_loop_dual_queue(void *buffer, int num_iter, int is_prefetching
 
         }
         else{
-            for(int c = num_partitions - 1; c >= 0; c--){
-                for(int r = 0; r < num_partitions; r++){
-                    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-                        int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
-                        if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == 0))
-                            hmb_dev.done1.virt_addr[id] = true; // No edge block, mark as done
-                        if(hmb_dev.done1.virt_addr[id])
-                            continue;
-                        ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
-                        if(ret < 0){
-                            cleanup(buffer);
-                            return -1;
+            if(row_overlap == 3 && iter > 0){
+                // Send row of normal tasks instead of column of normal tasks
+                for(int r = num_partitions - 1; r >= 0; r--){
+                    for(int c = num_partitions - 1; c >= 0; c--){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                            if(edge_blocks_length[r][c][csd_id] == 0 && !(r == 1 && c == 0))
+                                hmb_dev.done1.virt_addr[id] = true; // No edge block, mark as done
+                            if(hmb_dev.done1.virt_addr[id])
+                                continue;
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
+                            if(ret < 0){
+                                cleanup(buffer);
+                                return -1;
+                            }
+                        }
+                    }
+                }
+            }
+            else{
+                for(int c = num_partitions - 1; c >= 0; c--){
+                    for(int r = 0; r < num_partitions; r++){
+                        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                            int id = csd_id * num_partitions * num_partitions + r * num_partitions + c;
+                            if(edge_blocks_length[r][c][csd_id] == 0 && !(r == num_partitions - 1 && c == 0))
+                                hmb_dev.done1.virt_addr[id] = true; // No edge block, mark as done
+                            if(hmb_dev.done1.virt_addr[id])
+                                continue;
+                            ret = send_proc_edge(r, c, csd_id, iter, num_iter, ASYNC, false, is_prefetching, row_overlap);
+                            if(ret < 0){
+                                cleanup(buffer);
+                                return -1;
+                            }
                         }
                     }
                 }
@@ -757,12 +799,19 @@ void run_dq_prefetch_priorities(void* buffer, int __num_iter)
     printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
     printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
 
-    for(int i = 4; i <= 7; i++){
+    for(int i = 4, j = 8; i <= 7, j <= 11; i++, j++){
         float cnt = 0.0;
         for(int csd_id = 0; csd_id < num_csds; csd_id++){
             cnt += hmb_dev.buf2.virt_addr[csd_id + num_csds * i];
         }
-        printf("Priority %d: %lld\n", i - 2, (long long)cnt / num_csds);
+        float acc = 0.0;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            if(hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)] == 0.0f)
+                acc += 1.0;
+            else
+                acc += hmb_dev.buf2.virt_addr[csd_id + num_csds * j] / hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)];
+        }
+        printf("Priority %d: %lld, accuracy: %f\n", i - 2, (long long)cnt / num_csds, acc / num_csds);
     }
 }
 
@@ -774,10 +823,13 @@ void run_dq_row_overlap(void* buffer, int __num_iter)
     char prefetching_str[4][40] = {"No Prefetch", "Prefetch Current Edge", "Prefetch All"};
     char row_overlap_str[3][40] = {"No Row Overlap", "Row Overlap Front", "Row Overlap Back"};
 
-    for(int prefetching = 0; prefetching <= 0; prefetching++)
+    for(int prefetching = 0; prefetching <= 2; prefetching++)
     {
         for(int row_overlap = 0; row_overlap <= 2; row_overlap++)
         {
+            if(prefetching == 1 || row_overlap == 1){
+                continue;
+            }
             printf("DQ, %s, %s------", prefetching_str[prefetching], row_overlap_str[row_overlap]);
             init_csds_data(fd, buffer);
             s = get_time_ns();
@@ -1011,9 +1063,9 @@ int main(int argc, char* argv[])
     // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter, 2);
-    run_dq_hmb_size(buffer, __num_iter);
+    // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
-    // run_dq_row_overlap(buffer, __num_iter);
+    run_dq_row_overlap(buffer, __num_iter);
     // run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
     

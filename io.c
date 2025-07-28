@@ -16,6 +16,7 @@
 #include <asm/processor.h>
 
 #include <linux/jiffies.h>
+#include <linux/random.h>
 
 #include "nvmev.h"
 #include "dma.h"
@@ -78,6 +79,16 @@ void print_vertex_info(int csd_id, int* outdegree, int u, int v)
 	NVMEV_INFO("[CSD %d] src_vtx[%d]: %u.%06u, outdegree[%d]: %d, dst_vtx[%d]: %u.%06u\n", csd_id, u, i_src, f_src, u, outdegree[u], v, i_dst, f_dst);
 }
 
+unsigned short hash_edge(unsigned int u, unsigned int v) {
+    unsigned int h = u;
+    h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2);
+    return (unsigned short)(h & 1023);  // limit to [0, 1023]
+}
+
+static inline unsigned short get_rand_10bit(void) {
+    return (unsigned short)(get_random_u32() & 1023);  // random [0, 1023]
+}
+
 void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 {
 	int csd_id = task.csd_id;
@@ -99,9 +110,39 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	// Process the edges
 	hmb_offset = (long long)(csd_id + 1) * num_vertices;
 	start_time = ktime_get_ns();
-	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
-		u = *e, v = *(e + 1);
-		dst[v + hmb_offset] += src[u] / outdegree[u];
+	if(task.algorithm == 0){	
+		// Pagerank
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
+			u = *e, v = *(e + 1);
+			dst[v + hmb_offset] += src[u] / outdegree[u];
+		}
+	}
+	else if(task.algorithm == 1){
+		// Label Propagation (2 labels)
+		// Frequencies of neighbor labels (16, 16)
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {
+			u = *e, v = *(e + 1);
+			int freq[2];
+			freq[0] = src[u] & 0xFFFF;
+			freq[1] = (src[u] >> 16) & 0xFFFF;
+			if(freq[0] > freq[1]){
+				dst[v + hmb_offset] = (src[u] & 0xFFFF0000) | (freq[0] + 1);
+			}
+			else if(freq[0] < freq[1]){
+				dst[v + hmb_offset] = (src[u] & 0x0000FFFF) | ((freq[1] + 1) << 16);
+			}
+			else{
+				dst[v + hmb_offset] = src[u];
+			}
+		} 
+	}
+	else{
+		// Dispersion
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {
+			u = *e, v = *(e + 1);
+			if(src[u] == 1 && get_rand_10bit() < hash_edge(u, v))
+				dst[v + hmb_offset] = 1;
+		}
 	}
 	end_time = ktime_get_ns();
 
@@ -325,8 +366,12 @@ void __do_perform_edge_proc(void)
 			// 	task.csd_id,
 			// 	edge_buf->prefetched_r, edge_buf->prefetched_c, edge_buf->prefetched_iter,
 			// 	task.r, task.c, task.iter);
-			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c){
 				edge_buf->prefetch_block_hit_cnt++;
+				if(edge_buf->prefetched_priority != -1){
+					edge_buf->prefetch_block_hit_cnt_arr[edge_buf->prefetched_priority]++;
+				}
+			}
 			if(edge_buf->prefetched_r != -1 && edge_buf->prefetched_c != -1)
 				edge_buf->total_prefetch_block_cnt++;
 			
@@ -396,6 +441,8 @@ void __do_perform_edge_proc(void)
 										edge_buf->prefetched_r = next_task.r;
 										edge_buf->prefetched_c = next_task.c;
 										edge_buf->prefetched_iter = next_task.iter;
+										edge_buf->prefetch_block_cnt_arr[2]++;
+										edge_buf->prefetched_priority = 2;
 									}
 									found_cnt++;
 									if(tmp_edge_proc_time <= 0)
@@ -414,6 +461,8 @@ void __do_perform_edge_proc(void)
 									edge_buf->prefetched_r = next_task.r;
 									edge_buf->prefetched_c = next_task.c;
 									edge_buf->prefetched_iter = next_task.iter;
+									edge_buf->prefetch_block_cnt_arr[3]++;
+									edge_buf->prefetched_priority = 3;
 									found_cnt++;
 								}
 							}
@@ -427,6 +476,8 @@ void __do_perform_edge_proc(void)
 								edge_buf->prefetched_r = next_task.r;
 								edge_buf->prefetched_c = next_task.c;
 								edge_buf->prefetched_iter = next_task.iter;
+								edge_buf->prefetch_block_cnt_arr[4]++;
+								edge_buf->prefetched_priority = 4;
 								found_cnt++;
 							}
 						}
@@ -434,13 +485,14 @@ void __do_perform_edge_proc(void)
 						{
 							// Next iteration Normal tasks
 							get_queue_front(normal_task_queue, &next_task);
-
 							if(task.is_fvc && !next_task.is_fvc){
 								edge_buf->prefetch_priority_cnt[5] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 3);
 								if(found_cnt == 0){
 									edge_buf->prefetched_r = next_task.r;
 									edge_buf->prefetched_c = next_task.c;
 									edge_buf->prefetched_iter = next_task.iter;
+									edge_buf->prefetch_block_cnt_arr[5]++;
+									edge_buf->prefetched_priority = 5;
 									found_cnt++;
 								}
 							}
@@ -449,6 +501,10 @@ void __do_perform_edge_proc(void)
 				}
 			}
 			
+			if(task.algorithm == 2){
+				// weighted edge:
+				task.nsecs_target = (long long) (task.nsecs_target * 1.5);
+			}
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
 			while(ktime_get_ns() < end_time){
@@ -471,7 +527,11 @@ void __do_perform_edge_proc(void)
 		edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 			
 			// Fake E_00 task: for even iter end of iteration
-			if(task.iter % 2 == 0 && task.r == task.num_partitions - 1 && task.c == 0){
+			// If row_overlap, then the last normal task in even iter is E_10
+			if(task.iter % 2 == 0 && 
+				((task.row_overlap != 3 && task.r == task.num_partitions - 1 && task.c == 0)
+				|| (task.row_overlap == 3 && task.r == 1 && task.c == 0))
+			){
 				task.r = task.c = 0;
 				queue_enqueue(future_task_queue, task);
 			}
@@ -488,8 +548,12 @@ void __do_perform_edge_proc(void)
 			// 	task.csd_id,
 			// 	edge_buf->prefetched_r, edge_buf->prefetched_c, edge_buf->prefetched_iter,
 			// 	task.r, task.c, task.iter);
-			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c)
+			if(edge_buf->prefetched_r == task.r && edge_buf->prefetched_c == task.c){
 				edge_buf->prefetch_block_hit_cnt++;
+				if(edge_buf->prefetched_priority != -1){
+					edge_buf->prefetch_block_hit_cnt_arr[edge_buf->prefetched_priority]++;
+				}
+			}
 			if(edge_buf->prefetched_r != -1 && edge_buf->prefetched_c != -1)
 				edge_buf->total_prefetch_block_cnt++;
 
@@ -556,6 +620,8 @@ void __do_perform_edge_proc(void)
 										edge_buf->prefetched_r = next_task.r;
 										edge_buf->prefetched_c = next_task.c;
 										edge_buf->prefetched_iter = next_task.iter;
+										edge_buf->prefetch_block_cnt_arr[2]++;
+										edge_buf->prefetched_priority = 2;
 									}
 									found_cnt++;
 									if(tmp_edge_proc_time <= 0)
@@ -574,6 +640,8 @@ void __do_perform_edge_proc(void)
 									edge_buf->prefetched_r = next_task.r;
 									edge_buf->prefetched_c = next_task.c;
 									edge_buf->prefetched_iter = next_task.iter;
+									edge_buf->prefetch_block_cnt_arr[3]++;
+									edge_buf->prefetched_priority = 3;
 									found_cnt++;
 								}
 							}
@@ -587,6 +655,8 @@ void __do_perform_edge_proc(void)
 								edge_buf->prefetched_r = next_task.r;
 								edge_buf->prefetched_c = next_task.c;
 								edge_buf->prefetched_iter = next_task.iter;
+								edge_buf->prefetch_block_cnt_arr[4]++;
+								edge_buf->prefetched_priority = 4;
 								found_cnt++;
 							}
 						}
@@ -601,6 +671,8 @@ void __do_perform_edge_proc(void)
 									edge_buf->prefetched_r = next_task.r;
 									edge_buf->prefetched_c = next_task.c;
 									edge_buf->prefetched_iter = next_task.iter;
+									edge_buf->prefetch_block_cnt_arr[5]++;
+									edge_buf->prefetched_priority = 5;
 									found_cnt++;
 								}
 							}
@@ -608,7 +680,11 @@ void __do_perform_edge_proc(void)
 					}
 				}
 			}
-		
+			
+			if(task.algorithm == 2){
+				// weighted edge:
+				task.nsecs_target = (long long) (task.nsecs_target * 1.5);
+			}
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 
 			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
@@ -654,7 +730,10 @@ void __do_perform_edge_proc(void)
 					queue_enqueue(future_task_queue, task);
 				}
 				// To wait for the aggregation of P[0]
-				else if(task.iter % 2 == 1 && task.r == task.num_partitions - 1 && task.c == 0){
+				else if(task.iter % 2 == 1 && 
+					((task.row_overlap != 3 && task.r == task.num_partitions - 1 && task.c == 0)
+					|| (task.row_overlap == 3 && task.r == 1 && task.c == 0)))
+				{
 					task.r = task.c = 0;
 					task.iter++;
 					queue_enqueue(future_task_queue, task);
