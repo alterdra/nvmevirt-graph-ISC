@@ -57,6 +57,8 @@ int curr_edge_column_normal; //HMB size
 int curr_edge_column_future;
 int curr_iter;   
 
+int algorithm = 0; // 0: Pagerank, 1: Label Propagation, 2: Dispersion
+
 // Opens the NVMe device and returns file descriptor
 int open_nvme_device(const char *device_path) {
 
@@ -195,9 +197,26 @@ int init_csds_data(int* fd, void *buffer)
         hmb_dev.buf1.virt_addr[i] = 0.0f;
         hmb_dev.buf2.virt_addr[i] = 0.0f;
     }
-    for(long long i = 0; i < num_vertices; i++){
-        hmb_dev.buf0.virt_addr[i] = 1.0;
+
+    if(algorithm == 0){
+        // Pagerank
+        for(long long i = 0; i < num_vertices; i++){
+            hmb_dev.buf0.virt_addr[i] = 1.0;
+        }
     }
+    else if(algorithm == 1){
+        // label propagation
+
+    }
+    else{
+        // dispersion
+        for(long long i = 0; i < num_vertices; i++){
+            if(i % 100000 == 0){
+                hmb_dev.buf0.virt_addr[i] = 1.0;
+            }
+        }
+    }
+    
     for(int c = 0; c < num_partitions; c++){
         for(int r = 0; r < num_partitions; r++){
             for(int csd_id = 0; csd_id < num_csds; csd_id++){
@@ -376,16 +395,43 @@ void conv_partition(size_t partition_id){
     get_partition_range(partition_id, &begin, &end);
 
     // Add up vertex values to Host DRAM
-    for(size_t v = begin; v < end; v++){
-        for(int csd_id = 0; csd_id < num_csds; csd_id++){
-            hmb_dev.buf1.virt_addr[v] += hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices];
-            hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+    if(algorithm == 0){
+        // Pagerank
+        for(size_t v = begin; v < end; v++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                hmb_dev.buf1.virt_addr[v] += hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices];
+                hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+            }
+        }
+        // Conv the values, for convergence
+        for(size_t v = begin; v < end; v++)
+            hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+    }
+    else if(algorithm == 1){
+        // Label Propagation
+        int freq_src[2], freq_dst[2];
+        for(size_t v = begin; v < end; v++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                long long hmb_offset = (long long)(csd_id + 1) * num_vertices;
+                freq_src[0] = (int)hmb_dev.buf1.virt_addr[v + hmb_offset] & 0xFFFF;
+			    freq_src[1] = ((int)hmb_dev.buf1.virt_addr[v + hmb_offset] >> 16) & 0xFFFF;
+                freq_dst[0] = (int)hmb_dev.buf1.virt_addr[v] & 0xFFFF;
+                freq_dst[1] = ((int)hmb_dev.buf1.virt_addr[v] >> 16) & 0xFFFF;
+                hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+                hmb_dev.buf1.virt_addr[v] = (float)((freq_dst[0] + freq_src[0]) | ((freq_dst[1] + freq_src[1]) << 16));
+            }
         }
     }
-
-    // Conv the values, for convergence
-    for(size_t v = begin; v < end; v++)
-        hmb_dev.buf1.virt_addr[v] = 0.15f + 0.85f * hmb_dev.buf1.virt_addr[v];
+    else{
+        // Dispersion
+        for(size_t v = begin; v < end; v++){
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                if(hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] == 1.0)
+                    hmb_dev.buf1.virt_addr[v] = 1.0;
+                hmb_dev.buf1.virt_addr[v + (csd_id + 1) * num_vertices] = 0.0;
+            }
+        }
+    }
     
     // Notify CSD that partition c finish aggregation
     long long num_pages = 4LL * __ceil(end - begin, PAGE_SIZE);

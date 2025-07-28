@@ -120,21 +120,21 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	else if(task.algorithm == 1){
 		// Label Propagation (2 labels)
 		// Frequencies of neighbor labels (16, 16)
+		int freq_src[2], freq_dst[2];
 		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {
 			u = *e, v = *(e + 1);
-			int freq[2];
-			freq[0] = src[u] & 0xFFFF;
-			freq[1] = (src[u] >> 16) & 0xFFFF;
+			freq_src[0] = (int)src[u] & 0xFFFF;
+			freq_src[1] = ((int)src[u] >> 16) & 0xFFFF;
+			freq_dst[0] = (int)dst[v + hmb_offset] & 0xFFFF;
+			freq_dst[1] = ((int)dst[v + hmb_offset] >> 16) & 0xFFFF;
 			if(freq[0] > freq[1]){
-				dst[v + hmb_offset] = (src[u] & 0xFFFF0000) | (freq[0] + 1);
-			}
-			else if(freq[0] < freq[1]){
-				dst[v + hmb_offset] = (src[u] & 0x0000FFFF) | ((freq[1] + 1) << 16);
+				freq_dst[0]++;
 			}
 			else{
-				dst[v + hmb_offset] = src[u];
+				freq_dst[1]++;
 			}
-		} 
+			dst[v + hmb_offset] = (float)(freq_src[0] | (freq_src[1] << 16));
+		}
 	}
 	else{
 		// Dispersion
