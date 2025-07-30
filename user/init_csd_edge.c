@@ -343,6 +343,7 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_syn
         .is_fvc = is_fvc,
         .is_prefetching = is_prefetching,
         .row_overlap = row_overlap,
+        .algorithm = algorithm, // 0: Pagerank, 1: Label Propagation, 2: Dispersion
         .r = r, .c = c, .csd_id = csd_id,
         .num_partitions = num_partitions,
         .num_csds = num_csds,
@@ -1063,17 +1064,28 @@ void run_dq_hmb_size(void* buffer, int __num_iter)
 
 int main(int argc, char* argv[]) 
 {
-    if (argc<4) {
-		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [num_iters] [aggregation_time: optional]\n");
+    if (argc<5) {
+		fprintf(stderr, "usage: ./init_csd_edge [dataset_path] [num_csds] [algorithm] [num_iters] [aggregation_time: optional]\n");
 		exit(-1);
 	}
     strcpy(dataset_path, argv[1]);
     char meta_path[50];
     sprintf(meta_path, "%s/meta", dataset_path);
     num_csds = atoi(argv[2]);
-    int __num_iter = atoi(argv[3]);
-    if(argc >= 5)
-        aggregation_time = atoi(argv[4]);
+
+    char algorithm_str[20];
+    strcpy(algorithm_str, argv[3]);
+    if(strcmp(algorithm_str, "PR") == 0)
+        algorithm = 0;
+    else if(strcmp(algorithm_str, "LP") == 0)
+        algorithm = 1;
+    else if(strcmp(algorithm_str, "DP") == 0)
+        algorithm = 2;
+    
+    int __num_iter = atoi(argv[4]);
+    if(argc >= 6)
+        aggregation_time = atoi(argv[5]);
+
 
     // Initialize graph dataset metadata
     FILE * fin_meta = fopen(meta_path, "r");
@@ -1106,12 +1118,12 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d, num vertices: %lld\n", __num_iter, num_csds, num_vertices);
 
     total_aggr_time = 0;
-    // run_normal_grafu_dq(buffer, __num_iter);
+    run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter, 2);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
-    run_dq_row_overlap(buffer, __num_iter);
+    // run_dq_row_overlap(buffer, __num_iter);
     // run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
     

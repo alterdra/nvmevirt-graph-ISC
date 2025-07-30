@@ -58,15 +58,19 @@ echo "Output path: $dataset_path"
 cleaned_path="${dataset_path##*/}"
 echo "Cleaned path: $cleaned_path"
 
-output_path="experiments/scaling_${cleaned_path}_${x_percentage}%_p${num_partition}.txt"
+algorithm="DP"
+if [[ $algorithm == "DP" ]]; then
+    edge_alloc_human="666M"
+fi
+output_path="experiments/scaling_${cleaned_path}_${algorithm}%_p${num_partition}.txt"
 
 cd user
 make
 cd ..
 
 # Loop through the number of CSDs
-for num_csd in 1 8 16; do
+for num_csd in 8; do
     echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
     bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
-    sudo ./user/init_csd_edge $dataset_path $num_csd 10 >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm 10 >> $output_path
 done

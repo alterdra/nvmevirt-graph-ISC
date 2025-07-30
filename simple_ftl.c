@@ -107,6 +107,17 @@ static unsigned long long __schedule_flush(struct nvmev_request *req)
 	return latest;
 }
 
+unsigned short hash_edge1(unsigned int u, unsigned int v) {
+    unsigned int h = u;
+    h ^= v + 0x9e3779b9 + (h << 6) + (h >> 2);
+    return (unsigned short)(h & 1023);  // limit to [0, 1023]
+}
+
+unsigned short fast_pseudo_rand1(unsigned int *state) {
+    *state = *state * 1664525u + 1013904223u;
+    return *state & 1023u;  // Equivalent to % 1024, returns 0–1023
+}
+
 void __do_perform_edge_proc_grafu(struct PROC_EDGE task)
 {
 	int csd_id = task.csd_id;
@@ -171,9 +182,46 @@ edge_buf->edge_external_io_time += (EXEC_END_TIME - EXEC_START_TIME);
 EXEC_START_TIME = ktime_get_ns();
 	// Process normal values or future values according to iter in the command
 	start_time = ktime_get_ns();
-	for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
-		u = *e, v = *(e + 1);
-		dst[v + hmb_offset] += src[u] / outdegree[u];
+	if(task.algorithm == 0){	
+		// Pagerank
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {	
+			u = *e, v = *(e + 1);
+			dst[v + hmb_offset] += src[u] / outdegree[u];
+		}
+	}
+	else if(task.algorithm == 1){
+		// Label Propagation (2 labels)
+		// Frequencies of neighbor labels (16, 16)
+		int freq_src[2], freq_dst[2];
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {
+			u = *e, v = *(e + 1);
+			freq_src[0] = (int)src[u] & 0xFFFF;
+			freq_src[1] = ((int)src[u] >> 16) & 0xFFFF;
+			freq_dst[0] = (int)dst[v + hmb_offset] & 0xFFFF;
+			freq_dst[1] = ((int)dst[v + hmb_offset] >> 16) & 0xFFFF;
+			if(freq_src[0] > freq_src[1]){
+				freq_dst[0]++;
+			}
+			else if(freq_src[1] > freq_src[0]){
+				freq_dst[1]++;
+			}
+			else{
+				if(u % 2 == 0)
+					freq_dst[0]++;
+				else
+					freq_dst[1]++;
+			}
+			dst[v + hmb_offset] = (float)(freq_dst[0] | (freq_dst[1] << 16));
+		}
+	}
+	else{
+		// Dispersion
+		unsigned int state = 0;
+		for(; e < e_end; e += EDGE_SIZE / VERTEX_SIZE) {
+			u = *e, v = *(e + 1);
+			if(src[u] == 1 && fast_pseudo_rand1(&state) < hash_edge1(u, v))
+				dst[v + hmb_offset] = 1;
+		}
 	}
 	end_time = ktime_get_ns();
 
@@ -238,7 +286,9 @@ bool simple_proc_nvme_io_cmd(struct nvmev_ns *ns, struct nvmev_request *req,
 
 			// Schedule the I/O, get the target I/O complete time
 			current_time = __get_wallclock();
-			ret->nsecs_target = __schedule_io_units(cmd->common.opcode, proc_edge_struct.edge_block_slba, proc_edge_struct.edge_block_len, current_time);
+			ret->nsecs_target = __schedule_io_units(cmd->common.opcode, proc_edge_struct.edge_block_slba, 
+				proc_edge_struct.algorithm == 2 ? (proc_edge_struct.edge_block_len * 3 / 2) : proc_edge_struct.edge_block_len, 
+				current_time);
 			finished_time = ret->nsecs_target - current_time;
 			proc_edge_struct.nsecs_target = finished_time;
 			
