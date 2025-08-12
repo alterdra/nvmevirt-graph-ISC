@@ -15,6 +15,7 @@ struct PROC_EDGE
     __u32 is_fvc;
     __u32 is_prefetching;
     __u32 row_overlap;
+    __u32 cost_modeling;
     __u32 algorithm; // 0: Pagerank, 1: Label Propagation, 2: Dispersion
 
     __u32 nsid;     // Namespace id, used by kernel module

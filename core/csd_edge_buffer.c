@@ -22,6 +22,13 @@ void edge_buffer_init(struct edge_buffer *buf)
         buf->prefetch_block_hit_cnt_arr[i] = 0;
     }
 
+    buf->ema_aggr = 0;
+    buf->alpha_aggr = 0.1;
+    for(i = 0; i < MAX_PARTITION; i++){
+        buf->aggr_start_time[i] = -1;
+    }
+    buf->pr_reverse = false;
+
     printk(KERN_INFO "Edge buffer size: %lld", buf->capacity);
     printk(KERN_INFO "Cache eviction policy: %s", cache_eviction_policy);
     printk(KERN_INFO "Partial eviction?: %d", partial_edge_eviction);
@@ -55,6 +62,13 @@ void edge_buffer_destroy(struct edge_buffer *buf)
         buf->prefetch_block_cnt_arr[i] = 0;
         buf->prefetch_block_hit_cnt_arr[i] = 0;
     }
+
+    buf->ema_aggr = 0;
+    buf->alpha_aggr = 0.1;
+    for(i = 0; i < MAX_PARTITION; i++){
+        buf->aggr_start_time[i] = -1;
+    }
+    buf->pr_reverse = false;
 
     // Todo: execution time composition to a new header file
     buf->edge_proc_time = buf->edge_internal_io_time = buf->edge_external_io_time = 0;
@@ -151,7 +165,11 @@ long long evict_edge_block(struct edge_buffer *buf, bool* aggregated, struct edg
             unit = list_first_entry(&buf->head, struct edge_buffer_unit, list);
         }
 
-        if(is_prefetch && lower(inserted_unit, unit, aggregated)){
+        if(is_prefetch && !buf->pr_reverse && lower(inserted_unit, unit, aggregated)){
+            // If the unit is lower priority than the inserted unit, skip eviction
+            break;
+        }
+        if(is_prefetch && buf->pr_reverse && lower_reverse(inserted_unit, unit, aggregated)){
             // If the unit is lower priority than the inserted unit, skip eviction
             break;
         }
@@ -235,6 +253,31 @@ bool lower(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, b
         return true;
     if(evict_unit->is_prefetched_normal == 1)
         return false;
+
+    // 4. FIFO for executable future edges (since we process latest future that the row is ready)
+    return false;   
+}
+
+bool lower_reverse(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, bool* aggregated){
+    // Check if unit < evict_unit, evict unit is earlier in the list
+
+    // 1. LIFO for prefetched normal (2 for next iteration, lowest priority)
+    if(unit->is_prefetched_normal == 2)
+        return true;
+    if(evict_unit->is_prefetched_normal == 2)
+        return false;
+
+    // 3. LIFO for prefetched normal
+    if(unit->is_prefetched_normal == 1)
+        return true;
+    if(evict_unit->is_prefetched_normal == 1)
+        return false;
+    
+    // 2. FIFO for unexecutable future edges (since we process latest future that the row is ready)
+    if(evict_unit->is_prefetched_normal == 0 && !aggregated[evict_unit->r])
+        return false;
+    if(unit->is_prefetched_normal == 0 && !aggregated[unit->r])
+        return true; 
 
     // 4. FIFO for executable future edges (since we process latest future that the row is ready)
     return false;   

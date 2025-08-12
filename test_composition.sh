@@ -5,7 +5,7 @@
 # Ex: bash test_composition.sh Friendster.pl  5 14G 250M
 # Ex: bash test_composition.sh ./storage_sdf/lumos/Uk-2007.pl 5 30G 414M
 # Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
-# Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT30.pl 5 66G 1.1B
+# Ex: bash test_composition.sh ./storage_sdf/lumos/RMAT30.pl 5 257G 1.1B
 # sudo mount /dev/sdf1 storage_sdf
 # 203ec6ab-4d40-4794-bfc8-e6807b5bbb61
 

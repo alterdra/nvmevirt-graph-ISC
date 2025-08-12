@@ -32,6 +32,12 @@ struct edge_buffer {
     long long prefetch_priority_cnt[7];
     long long prefetch_block_cnt_arr[7], prefetch_block_hit_cnt_arr[7];
 
+    // For cost modeling
+    long long ema_aggr;
+    float alpha_aggr; 
+    long long aggr_start_time[MAX_PARTITION];
+    bool pr_reverse;
+
     // Todo: execution time composition to a new header file
     long long edge_proc_time, edge_internal_io_time, edge_external_io_time;
 };
@@ -50,5 +56,8 @@ void invalidate_edge_block(struct edge_buffer *buf, int r, int c);
 void invalidate_edge_block_fifo(struct edge_buffer *buf);
 long long get_edge_block_size(struct edge_buffer *buf, int r, int c);
 bool lower(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, bool* aggregated);
+
+// For cost modeling
+bool lower_reverse(struct edge_buffer_unit *unit, struct edge_buffer_unit *evict_unit, bool* aggregated);
 
 #endif

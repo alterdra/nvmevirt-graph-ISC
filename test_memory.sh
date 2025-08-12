@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Ex: bash test_scalibity.sh LiveJournal.pl 5 526M 18M
-# Ex: bash test_scalibity.sh Twitter-2010.pl 5 11G 160M
-# Ex: bash test_scalibity.sh Friendster.pl 5 14G 250M
-# Ex: bash test_scalibity.sh Uk-2007.pl 5 30G 414M
-# Ex: bash test_scalibity.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
-# Ex: bash test_scalibity.sh ./storage_sdf/lumos/RMAT30.pl 5 257G 1.1B
+# Ex: bash test_memory.sh LiveJournal.pl 5 526M 18M
+# Ex: bash test_memory.sh Twitter-2010.pl 5 11G 160M
+# Ex: bash test_memory.sh Friendster.pl 5 14G 250M
+# Ex: bash test_memory.sh ./storage_sdf/lumos/Uk-2007.pl 5 30G 414M
+# Ex: bash test_memory.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
+# Ex: bash test_memory.sh ./storage_sdf/lumos/RMAT30.pl 5 257G 1.1B
 
 # Function to convert human-readable sizes (K, M, G) to bytes
 convert_to_bytes() {
@@ -45,7 +45,7 @@ x_decimal=$(echo "scale=4; $x_percentage / 100" | bc | sed 's/^\./0./')
 edge_alloc=$(echo "scale=4; $edge_size * $x_decimal" | bc)
 edge_alloc=$(echo "$edge_alloc" | awk '{print int($1)}')
 # edge_alloc_human=$(convert_to_human $edge_alloc)
-edge_alloc_human="1G"
+# edge_alloc_human="1G"
 
 vertex_alloc=$(echo "scale=4; $vertex_size * 2 * $x_decimal" | bc)
 vertex_alloc=$(echo "$vertex_alloc" | awk '{print int($1)}')
@@ -58,19 +58,20 @@ echo "Output path: $dataset_path"
 cleaned_path="${dataset_path##*/}"
 echo "Cleaned path: $cleaned_path"
 
-algorithm="DP"
-if [[ $algorithm == "DP" ]]; then
-    edge_alloc_human="666M"
-fi
-output_path="experiments/scaling_${cleaned_path}_${algorithm}%_p${num_partition}.txt"
+algorithm="PR"
+output_path="experiments/memory_${cleaned_path}_p${num_partition}.txt"
 
 cd user
 make
 cd ..
 
+num_csd=8
+num_iter=10
+
 # Loop through the number of CSDs
-for num_csd in 8; do
+for edge_alloc_human in 100M 500M 1G; do
     echo "Allocating: edge_size=$edge_alloc_human, vertex_size=$vertex_alloc_human for num_csd=$num_csd"
     bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
-    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm 10 >> $output_path
+    echo "Memory size=$edge_alloc_human" >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm $num_iter >> $output_path
 done

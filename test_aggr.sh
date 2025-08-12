@@ -3,7 +3,7 @@
 # Ex: bash test_aggr.sh LiveJournal.pl 3 526M 18M
 # Ex: bash test_aggr.sh Twitter-2010.pl 1 11G 160M
 # Ex: bash test_aggr.sh Friendster.pl 1 14G 250M
-# Ex: bash test_aggr.sh Uk-2007.pl 1 30G 414M
+# Ex: bash test_aggr.sh ./storage_sdf/lumos/Uk-2007.pl 1 30G 414M
 # Ex: bash test_aggr.sh ./storage_sdf/lumos/RMAT29.pl 5 66G 537M
 
 # Function to convert human-readable sizes (K, M, G) to bytes
@@ -66,13 +66,14 @@ make
 cd ..
 
 # 20000 40000 80000 160000 320000
+algorithm="PR"
 
 # LIFO
-bash init_csds.sh -n $num_csd -c LIFO -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
+bash init_csds.sh -n $num_csd -c PRIORITY -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
 for aggr_time in 10000 20000 30000; do
-    echo "LIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human vertex_size=$vertex_alloc_human $for num_csd=$num_csd"
-    echo "LIFO for aggregation time $aggr_time" >> $output_path
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
+    echo "PRIORITY for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human vertex_size=$vertex_alloc_human $for num_csd=$num_csd"
+    echo "PRIORITY for aggregation time $aggr_time" >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm $num_iter $aggr_time >> $output_path
     printf "\n" >> $output_path
 done
 
@@ -81,6 +82,6 @@ bash init_csds.sh  -n $num_csd -e $edge_alloc_human -v $vertex_alloc_human
 for aggr_time in 10000 20000 30000; do
     echo "FIFO for aggregation time $aggr_time. Allocating: edge_size=$edge_alloc_human for num_csd=$num_csd"
     echo "FIFO for aggregation time $aggr_time" >> $output_path
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm $num_iter $aggr_time >> $output_path
     printf "\n" >> $output_path
 done

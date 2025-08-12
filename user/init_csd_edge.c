@@ -57,6 +57,9 @@ int curr_edge_column_normal; //HMB size
 int curr_edge_column_future;
 int curr_iter;   
 
+// Cost Model
+bool cost_modeling = false;
+
 int algorithm = 0; // 0: Pagerank, 1: Label Propagation, 2: Dispersion
 
 // Opens the NVMe device and returns file descriptor
@@ -343,6 +346,7 @@ int send_proc_edge(int r, int c, int csd_id, int iter, int num_iters, int is_syn
         .is_fvc = is_fvc,
         .is_prefetching = is_prefetching,
         .row_overlap = row_overlap,
+        .cost_modeling = cost_modeling,
         .algorithm = algorithm, // 0: Pagerank, 1: Label Propagation, 2: Dispersion
         .r = r, .c = c, .csd_id = csd_id,
         .num_partitions = num_partitions,
@@ -834,32 +838,37 @@ void run_dq_prefetch_priorities(void* buffer, int __num_iter)
     long long s, e;
     int ms_ns_ratio = 1000000;
 
-    printf("DQ_PF-----------");
-    init_csds_data(fd, buffer);
-    s = get_time_ns();
-    csd_proc_edge_loop_dual_queue(buffer, __num_iter, 2, 2);
-    e = get_time_ns();
-    cache_hit_rate = 0.0;
-    for(int csd_id = 0; csd_id < num_csds; csd_id++){
-        cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
-    }
-    printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
-    printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
+    char cost_model_str[2][40] = {"No Cost Modeling", "Cost Modeling"};
+    for(int turn = 1; turn < 2; turn++){
+        cost_modeling = turn;
+        printf("DQ_PF, %s------", cost_model_str[turn]);
+        init_csds_data(fd, buffer);
+        s = get_time_ns();
+        csd_proc_edge_loop_dual_queue(buffer, __num_iter, 2, 2);
+        e = get_time_ns();
+        cache_hit_rate = 0.0;
+        for(int csd_id = 0; csd_id < num_csds; csd_id++){
+            cache_hit_rate += hmb_dev.buf2.virt_addr[csd_id];
+        }
+        printf("Execution time: %lld ms\n", (e - s) / ms_ns_ratio);
+        printf("Avg. cache hit rate: %f\n", cache_hit_rate / num_csds);
 
-    for(int i = 4, j = 8; i <= 7, j <= 11; i++, j++){
-        float cnt = 0.0;
-        for(int csd_id = 0; csd_id < num_csds; csd_id++){
-            cnt += hmb_dev.buf2.virt_addr[csd_id + num_csds * i];
+        for(int i = 4, j = 8; i <= 7, j <= 11; i++, j++){
+            float cnt = 0.0;
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                cnt += hmb_dev.buf2.virt_addr[csd_id + num_csds * i];
+            }
+            float acc = 0.0;
+            for(int csd_id = 0; csd_id < num_csds; csd_id++){
+                if(hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)] == 0.0f)
+                    acc += 1.0;
+                else
+                    acc += hmb_dev.buf2.virt_addr[csd_id + num_csds * j] / hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)];
+            }
+            printf("Priority %d: %lld, accuracy: %f\n", i - 2, (long long)cnt / num_csds, acc / num_csds);
         }
-        float acc = 0.0;
-        for(int csd_id = 0; csd_id < num_csds; csd_id++){
-            if(hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)] == 0.0f)
-                acc += 1.0;
-            else
-                acc += hmb_dev.buf2.virt_addr[csd_id + num_csds * j] / hmb_dev.buf2.virt_addr[csd_id + num_csds * (j + 4)];
-        }
-        printf("Priority %d: %lld, accuracy: %f\n", i - 2, (long long)cnt / num_csds, acc / num_csds);
     }
+    cost_modeling = false;
 }
 
 void run_dq_row_overlap(void* buffer, int __num_iter)
@@ -1118,13 +1127,13 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d, num vertices: %lld\n", __num_iter, num_csds, num_vertices);
 
     total_aggr_time = 0;
-    run_normal_grafu_dq(buffer, __num_iter);
+    // run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter, 2);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
     // run_dq_row_overlap(buffer, __num_iter);
-    // run_dq_prefetch_priorities(buffer, __num_iter);
+    run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
     
     cleanup(buffer);

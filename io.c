@@ -95,6 +95,7 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 {
 	int csd_id = task.csd_id;
 	long long num_vertices = task.num_vertices;
+	struct edge_buffer *edge_buf = &nvmev_vdev->edge_buf;
 
 	int* storage = nvmev_vdev->ns[task.nsid].mapped;
 	int* outdegree = storage + task.outdegree_slba / VERTEX_SIZE;
@@ -162,11 +163,35 @@ void __proc_edge(struct PROC_EDGE task, float* dst, float* src, bool* done)
 	while(ktime_get_ns() < end_time){
 		if (kthread_should_stop())
 			return;
+		// For cost model
+		if(task.cost_modeling){
+			int i;
+			for(i = 0; i < MAX_PARTITION; i++){
+				if(edge_buf->aggr_start_time[i] != -1 && hmb_dev.done_partition.virt_addr[i]){
+					long long aggr_time = ktime_get_ns() - edge_buf->aggr_start_time[i];
+					edge_buf->ema_aggr = (long long) ((edge_buf->alpha_aggr * aggr_time) + (1.0 - edge_buf->alpha_aggr) * edge_buf->ema_aggr);
+					edge_buf->aggr_start_time[i] = -1;
+					NVMEV_INFO("CSD %d, Partition %d, Aggregation time: %lld ns, EMA: %lld ns", task.csd_id, i, aggr_time, edge_buf->ema_aggr);
+				}
+			}
+		}
 	}
 	
 	// For task.csd_id, Edge task.r, task.c is finished
 	id = task.csd_id * task.num_partitions * task.num_partitions + task.r * task.num_partitions + task.c;
 	done[id] = 1;
+
+	// For cost model
+	if(task.cost_modeling){
+		if(!task.is_fvc){
+			if(task.iter == 0 && task.r == task.num_partitions - 1
+			|| task.iter != 0 && task.iter % 2 == 0 && task.r == task.c
+			|| task.iter != 0 && task.iter % 2 == 1 && task.r == task.num_partitions - 1){
+				// Aggregation start
+				edge_buf->aggr_start_time[task.c] = ktime_get_ns();
+			}
+		}
+	}
 }
 
 long long prefetch_edge_block(struct edge_buffer *edge_buf, struct PROC_EDGE task_prefetch, long long* edge_proc_time, int is_prefetch)
@@ -461,18 +486,35 @@ void __do_perform_edge_proc(void)
 						}
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
-							// Normal tasks
-							get_queue_front(normal_task_queue, &next_task);
+							bool pr_reverse = false;
+							if(get_queue_size(future_task_queue)){
+								get_queue_front(normal_task_queue, &next_task);
+								// Already calculated edge_proc_time (passed)
+								if(!hmb_dev.done_partition.virt_addr[next_task.r]){
+									if(edge_buf->ema_aggr > 0 && (
+										ktime_get_ns() + task.nsecs_target * ratio > 
+										edge_buf->aggr_start_time[next_task.r] + edge_buf->ema_aggr))
+									{
+										// Priority 4 > 3
+										pr_reverse = true;
+										edge_buf->pr_reverse = true;
+									}
+								}
+							}
+							if(!pr_reverse){
+								// Normal tasks
+								get_queue_front(normal_task_queue, &next_task);
 
-							if(!(task.is_fvc && !next_task.is_fvc)){
-								edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
-								if(found_cnt == 0){
-									edge_buf->prefetched_r = next_task.r;
-									edge_buf->prefetched_c = next_task.c;
-									edge_buf->prefetched_iter = next_task.iter;
-									edge_buf->prefetch_block_cnt_arr[3]++;
-									edge_buf->prefetched_priority = 3;
-									found_cnt++;
+								if(!(task.is_fvc && !next_task.is_fvc)){
+									edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
+									if(found_cnt == 0){
+										edge_buf->prefetched_r = next_task.r;
+										edge_buf->prefetched_c = next_task.c;
+										edge_buf->prefetched_iter = next_task.iter;
+										edge_buf->prefetch_block_cnt_arr[3]++;
+										edge_buf->prefetched_priority = 3;
+										found_cnt++;
+									}
 								}
 							}
 						}
@@ -490,6 +532,10 @@ void __do_perform_edge_proc(void)
 								found_cnt++;
 							}
 						}
+
+						// Cost Model
+						edge_buf->pr_reverse = false;
+
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
 							// Next iteration Normal tasks
@@ -511,10 +557,22 @@ void __do_perform_edge_proc(void)
 			}
 			
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
-			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Future. EMA: %lld", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio), edge_buf->ema_aggr);
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())
 					return;
+				// For cost model
+				if(task.cost_modeling){
+					int i;
+					for(i = 0; i < MAX_PARTITION; i++){
+						if(edge_buf->aggr_start_time[i] != -1 && hmb_dev.done_partition.virt_addr[i]){
+							long long aggr_time = ktime_get_ns() - edge_buf->aggr_start_time[i];
+							edge_buf->ema_aggr = (long long) ((edge_buf->alpha_aggr * aggr_time) + (1.0 - edge_buf->alpha_aggr) * edge_buf->ema_aggr);
+							edge_buf->aggr_start_time[i] = -1;
+							NVMEV_INFO("CSD %d, Partition %d, Aggregation time: %lld ns, EMA: %lld ns", task.csd_id, i, aggr_time, edge_buf->ema_aggr);
+						}
+					}
+				}
 			}
 		EXEC_END_TIME = ktime_get_ns();
 		edge_buf->edge_internal_io_time += (EXEC_END_TIME - EXEC_START_TIME);
@@ -636,18 +694,35 @@ void __do_perform_edge_proc(void)
 						}
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
-							// Normal tasks
-							get_queue_front(normal_task_queue, &next_task);
+							bool pr_reverse = false;
+							if(get_queue_size(future_task_queue)){
+								get_queue_front(normal_task_queue, &next_task);
+								// Already calculated edge_proc_time (passed)
+								if(!hmb_dev.done_partition.virt_addr[next_task.r]){
+									if(edge_buf->ema_aggr > 0 && (
+										ktime_get_ns() + task.nsecs_target * ratio > 
+										edge_buf->aggr_start_time[next_task.r] + edge_buf->ema_aggr))
+									{
+										// Priority 4 > 3
+										pr_reverse = true;
+										edge_buf->pr_reverse = true;
+									}
+								}
+							}
+							if(!pr_reverse){
+								// Normal tasks
+								get_queue_front(normal_task_queue, &next_task);
 
-							if(!(task.is_fvc && !next_task.is_fvc)){
-								edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
-								if(found_cnt == 0){
-									edge_buf->prefetched_r = next_task.r;
-									edge_buf->prefetched_c = next_task.c;
-									edge_buf->prefetched_iter = next_task.iter;
-									edge_buf->prefetch_block_cnt_arr[3]++;
-									edge_buf->prefetched_priority = 3;
-									found_cnt++;
+								if(!(task.is_fvc && !next_task.is_fvc)){
+									edge_buf->prefetch_priority_cnt[3] += prefetch_edge_block(edge_buf, next_task, &tmp_edge_proc_time, 2);
+									if(found_cnt == 0){
+										edge_buf->prefetched_r = next_task.r;
+										edge_buf->prefetched_c = next_task.c;
+										edge_buf->prefetched_iter = next_task.iter;
+										edge_buf->prefetch_block_cnt_arr[3]++;
+										edge_buf->prefetched_priority = 3;
+										found_cnt++;
+									}
 								}
 							}
 						}
@@ -665,6 +740,10 @@ void __do_perform_edge_proc(void)
 								found_cnt++;
 							}
 						}
+
+						// Cost Model
+						edge_buf->pr_reverse = false;
+
 						if(tmp_edge_proc_time > 0 && get_queue_size(normal_task_queue))
 						{
 							// Next iteration Normal tasks
@@ -688,10 +767,22 @@ void __do_perform_edge_proc(void)
 			
 			end_time = ktime_get_ns() + (long long) (task.nsecs_target * ratio);
 
-			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio));
+			NVMEV_INFO("[CSD %d, %s(), iter: %d]: Processing edge-block-%u-%u with time span %lld, Normal. EMA: %lld", task.csd_id, __func__, task.iter, task.r, task.c, (long long) (task.nsecs_target * ratio), edge_buf->ema_aggr);
 			while(ktime_get_ns() < end_time){
 				if (kthread_should_stop())
 					return;
+				// For cost model
+				if(task.cost_modeling){
+					int i;
+					for(i = 0; i < MAX_PARTITION; i++){
+						if(edge_buf->aggr_start_time[i] != -1 && hmb_dev.done_partition.virt_addr[i]){
+							long long aggr_time = ktime_get_ns() - edge_buf->aggr_start_time[i];
+							edge_buf->ema_aggr = (long long) ((edge_buf->alpha_aggr * aggr_time) + (1.0 - edge_buf->alpha_aggr) * edge_buf->ema_aggr);
+							edge_buf->aggr_start_time[i] = -1;
+							NVMEV_INFO("CSD %d, Partition %d, Aggregation time: %lld ns, EMA: %lld ns", task.csd_id, i, aggr_time, edge_buf->ema_aggr);
+						}
+					}
+				}
 			}
 		EXEC_END_TIME = ktime_get_ns();
 		edge_buf->edge_internal_io_time += (EXEC_END_TIME - EXEC_START_TIME);

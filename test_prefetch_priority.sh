@@ -65,9 +65,10 @@ cd user
 make
 cd ..
 
+algorithm="PR"
 bash init_csds.sh -n $num_csd -c PRIORITY -p 1 -i 1 -e $edge_alloc_human -v $vertex_alloc_human
 for aggr_time in 10000 20000 30000; do
     echo "Priority-based Replacement for aggregation time $aggr_time" >> $output_path
-    sudo ./user/init_csd_edge $dataset_path $num_csd $num_iter $aggr_time >> $output_path
+    sudo ./user/init_csd_edge $dataset_path $num_csd $algorithm $num_iter $aggr_time >> $output_path
     printf "\n" >> $output_path
 done
