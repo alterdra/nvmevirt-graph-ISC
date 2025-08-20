@@ -46,7 +46,7 @@ edge_alloc=$(echo "scale=4; $edge_size * $x_decimal" | bc)
 edge_alloc=$(echo "$edge_alloc" | awk '{print int($1)}')
 # edge_alloc_human=$(convert_to_human $edge_alloc)
 # edge_alloc_human="1G"
-edge_alloc_human="100M"
+edge_alloc_human="1G"
 
 vertex_alloc=$(echo "scale=4; $vertex_size * 2 * $x_decimal" | bc)
 vertex_alloc=$(echo "$vertex_alloc" | awk '{print int($1)}')

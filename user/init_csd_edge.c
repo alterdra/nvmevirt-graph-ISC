@@ -839,7 +839,7 @@ void run_dq_prefetch_priorities(void* buffer, int __num_iter)
     int ms_ns_ratio = 1000000;
 
     char cost_model_str[2][40] = {"No Cost Modeling", "Cost Modeling"};
-    for(int turn = 1; turn < 2; turn++){
+    for(int turn = 0; turn < 1; turn++){
         cost_modeling = turn;
         printf("DQ_PF, %s------", cost_model_str[turn]);
         init_csds_data(fd, buffer);
@@ -873,6 +873,7 @@ void run_dq_prefetch_priorities(void* buffer, int __num_iter)
 
 void run_dq_row_overlap(void* buffer, int __num_iter)
 {
+    // printf("Running DQ with Row Overlap\n");
     float cache_hit_rate;
     long long s, e;
     int ms_ns_ratio = 1000000;
@@ -1127,13 +1128,13 @@ int main(int argc, char* argv[])
     printf("num iter: %d, num csds: %d, num vertices: %lld\n", __num_iter, num_csds, num_vertices);
 
     total_aggr_time = 0;
-    // run_normal_grafu_dq(buffer, __num_iter);
+    run_normal_grafu_dq(buffer, __num_iter);
     // run_dq_cache_hitrate(buffer, __num_iter);
     // run_dq_composition(buffer, __num_iter, 2);
     // run_dq_hmb_size(buffer, __num_iter);
     // run_dq_prefetch(buffer, __num_iter);
     // run_dq_row_overlap(buffer, __num_iter);
-    run_dq_prefetch_priorities(buffer, __num_iter);
+    // run_dq_prefetch_priorities(buffer, __num_iter);
     // run_all_composition(buffer, __num_iter);
     
     cleanup(buffer);
